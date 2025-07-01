@@ -2226,6 +2226,7 @@ def get_chat_messages_for_summary_by_date_range(user_id, start_time, end_time):
 
 def process_group_summary(user_id, custom_time_range=None):
     """处理群聊总结请求 - 优化版本，支持自定义时间范围和提示词"""
+    import config  # 导入config模块
     try:
         # 记录开始处理
         if custom_time_range:
@@ -2243,12 +2244,11 @@ def process_group_summary(user_id, custom_time_range=None):
                 if group_data.get('group') == user_id:
                     group_config = group_data
                     custom_prompt_file = group_data.get('prompt', '').strip()
+                    logger.info(f"找到群聊 '{user_id}' 的配置，提示词: {custom_prompt_file}")
                     break
             elif isinstance(group_data, str):
-                # 兼容旧格式（只有群聊名称）
-                if group_data == user_id:
-                    group_config = {'group': user_id, 'prompt': ''}
-                    break
+                logger.error(f"群聊总结失败: 未提供有效的时间范围")
+                return
         
         # 获取聊天记录 - 支持自定义时间范围或使用默认配置
         if custom_time_range:
@@ -2263,12 +2263,11 @@ def process_group_summary(user_id, custom_time_range=None):
                 
             except (ValueError, KeyError) as e:
                 logger.error(f"解析自定义时间范围失败: {e}")
-                formatted_messages = get_chat_messages_for_summary(user_id, SUMMARY_TIME_HOURS)
-                time_description = f"过去{SUMMARY_TIME_HOURS}小时（回退到默认范围）"
+                return  # 直接返回，不使用默认时间范围
         else:
-            # 使用默认时间范围
-            formatted_messages = get_chat_messages_for_summary(user_id, SUMMARY_TIME_HOURS)
-            time_description = f"过去{SUMMARY_TIME_HOURS}小时"
+            # 没有提供时间范围，记录错误并返回
+            logger.error(f"群聊总结失败: 未提供有效的时间范围")
+            return  # 不进行处理
         
         if not formatted_messages:
             logger.warning(f"群聊总结跳过: 群聊 '{user_id}' 在{time_description}内没有找到任何聊天记录")
@@ -3140,14 +3139,17 @@ def save_recurring_reminders():
                     pass
 
 def recurring_reminder_checker():
-    """后台线程函数，每分钟检查是否有到期的重复或长期一次性提醒。"""
+    """后台线程函数，每分钟检查是否有到期的重复或长期一次性提醒，以及是否需要执行定时群聊总结。"""
+    import config  # 导入config模块
     last_checked_minute_str = None # 记录上次检查的 YYYY-MM-DD HH:MM
+    last_summary_date = None  # 记录上次执行群聊总结的日期
     while True:
         try:
             now = datetime.now()
             # 需要精确到分钟进行匹配
             current_datetime_minute_str = now.strftime("%Y-%m-%d %H:%M")
             current_time_minute_str = now.strftime("%H:%M") # 仅用于匹配每日重复
+            current_date = now.date()  # 当前日期，用于判断群聊总结是否已执行
 
             # 仅当分钟数变化时才执行检查
             if current_datetime_minute_str != last_checked_minute_str:
@@ -3254,6 +3256,38 @@ def recurring_reminder_checker():
 
                 # 更新上次检查的分钟数
                 last_checked_minute_str = current_datetime_minute_str
+                
+                # --- 检查是否需要执行群聊总结 ---
+                if ENABLE_GROUP_SUMMARY and hasattr(config, 'SUMMARY_TIME') and config.SUMMARY_TIME:
+                    # 检查当前时间是否是设置的总结时间
+                    if current_time_minute_str == config.SUMMARY_TIME and (last_summary_date is None or current_date > last_summary_date):
+                        logger.info(f"当前时间 {current_time_minute_str} 匹配配置的群聊总结时间，准备触发群聊总结...")
+                        
+                        # 获取配置的群聊列表
+                        summary_groups = []
+                        if hasattr(config, 'SUMMARY_GROUP_LIST') and config.SUMMARY_GROUP_LIST:
+                            for group_data in config.SUMMARY_GROUP_LIST:
+                                group_name = group_data['group'] if isinstance(group_data, dict) else group_data
+                                # 直接触发群聊总结处理
+                                try:
+                                    logger.info(f"定时触发群聊 '{group_name}' 的总结")
+                                    
+                                    # 检查是否有保存的时间范围配置
+                                    custom_time_range = None
+                                    if hasattr(config, 'SUMMARY_START_TIME') and hasattr(config, 'SUMMARY_END_TIME') and config.SUMMARY_START_TIME and config.SUMMARY_END_TIME:
+                                        custom_time_range = {
+                                            'start': config.SUMMARY_START_TIME,
+                                            'end': config.SUMMARY_END_TIME
+                                        }
+                                        logger.info(f"使用配置的默认时间范围: {config.SUMMARY_START_TIME} 至 {config.SUMMARY_END_TIME}")
+                                    
+                                    # 调用总结处理函数，传入时间范围
+                                    process_group_summary(group_name, custom_time_range)
+                                except Exception as e:
+                                    logger.error(f"定时触发群聊 '{group_name}' 总结失败: {e}")
+                        
+                        # 更新上次执行日期
+                        last_summary_date = current_date
 
             # 休眠，接近一分钟检查一次
             time.sleep(58)

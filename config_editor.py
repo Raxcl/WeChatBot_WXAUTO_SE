@@ -320,13 +320,32 @@ def submit_config():
         
         # 处理群聊总结的群聊列表
         group_names_from_form = request.form.getlist('group_name')
+        group_prompts_from_form = request.form.getlist('group_prompt')
         processed_group_list = []
-        if group_names_from_form:
-            for group_name in group_names_from_form:
+        if group_names_from_form and group_prompts_from_form and len(group_names_from_form) == len(group_prompts_from_form):
+            for i, group_name in enumerate(group_names_from_form):
                 group_name_stripped = group_name.strip()
+                group_prompt = group_prompts_from_form[i]
                 if group_name_stripped:  # 只添加非空的群聊名称
-                    processed_group_list.append(group_name_stripped)
+                    if group_prompt:
+                        # 如果提供了提示词，保存为字典格式
+                        processed_group_list.append({'group': group_name_stripped, 'prompt': group_prompt})
+                    else:
+                        # 如果没有提供提示词，只保存群聊名称（向后兼容）
+                        processed_group_list.append(group_name_stripped)
         new_values_for_config_py['SUMMARY_GROUP_LIST'] = processed_group_list
+        
+        # 处理群聊总结时间范围
+        summary_start_time = request.form.get('summaryStartTime', '')
+        summary_end_time = request.form.get('summaryEndTime', '')
+        if summary_start_time and summary_end_time:
+            try:
+                # 保存时间范围配置为两个独立字段
+                new_values_for_config_py['SUMMARY_START_TIME'] = summary_start_time
+                new_values_for_config_py['SUMMARY_END_TIME'] = summary_end_time
+                app.logger.info(f"保存群聊总结默认时间范围: {summary_start_time} 至 {summary_end_time}")
+            except Exception as e:
+                app.logger.error(f"保存群聊总结默认时间范围失败: {e}")
         
         new_listen_list_map = {item[0]: item[1] for item in processed_listen_list}
         
@@ -350,7 +369,7 @@ def submit_config():
             new_values_for_config_py[field] = field in request.form
 
         for key_from_form in request.form:
-            if key_from_form in ['nickname', 'prompt_file', 'group_name'] or key_from_form in boolean_fields:
+            if key_from_form in ['nickname', 'prompt_file', 'group_name', 'summaryStartTime', 'summaryEndTime'] or key_from_form in boolean_fields:
                 continue
 
             value_from_form = request.form[key_from_form].strip()

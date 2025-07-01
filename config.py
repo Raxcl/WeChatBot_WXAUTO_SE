@@ -12,7 +12,7 @@
 
 # 用户列表(请配置要和bot说话的账号的微信昵称！)
 # 例如：LISTEN_LIST = [['微信名1', '角色1'],['微信名2', '角色2']]
-LISTEN_LIST = [['测试群1', '角色1']]
+LISTEN_LIST = [['测试群1', '角色1'], ['测试群2', '角色2']]
 
 # DeepSeek API 配置
 DEEPSEEK_API_KEY = 'sk-wiyceuorksjphlaspgzgryeoqgosvdwhnvouobygewhcysfe'
@@ -150,19 +150,14 @@ ENABLE_SENSITIVE_CONTENT_CLEARING = False
 ENABLE_GROUP_SUMMARY = True
 
 # 支持总结的群聊列表
-SUMMARY_GROUP_LIST = ['测试群1']
-
-# 获取消息的时间范围（小时，默认24小时即昨天）
-SUMMARY_TIME_HOURS = 24.0
-
-# 群聊总结使用的Prompt文件（留空则使用内置总结逻辑）
-SUMMARY_PROMPT_FILE = ''
+SUMMARY_GROUP_LIST = [{'group': '测试群1', 'prompt': '群聊总结官'}, {'group': '测试群2', 'prompt': '高冷群聊总结助手'}]
 
 # 每日总结执行时间（24小时制，格式：HH:MM）
-SUMMARY_TIME = '09:00'
+SUMMARY_TIME = '19:04'
 
-# 自定义间隔小时数（仅当SUMMARY_FREQUENCY为'custom'时有效）
-SUMMARY_INTERVAL_HOURS = 24
+# 群聊总结默认时间范围
+SUMMARY_START_TIME = '2025-07-01T00:00'
+SUMMARY_END_TIME = '2025-07-01T19:02'
 
 # --- 配置文件结束 ---
 

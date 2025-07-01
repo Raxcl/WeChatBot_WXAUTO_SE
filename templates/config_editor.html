@@ -2750,14 +2750,16 @@
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                                 <div>
                                     <label style="font-size: 12px; color: #1976d2; margin-bottom: 5px; display: block;">开始日期时间:</label>
-                                    <input type="datetime-local" id="summaryStartTime" style="width: 100%;" 
-                                           onchange="updateSummaryPreview()" oninput="updateSummaryPreview()">
+                                    <input type="datetime-local" id="summaryStartTime" name="summaryStartTime" style="width: 100%;" 
+                                           onchange="updateSummaryPreview()" oninput="updateSummaryPreview()"
+                                           value="{% if config.SUMMARY_START_TIME %}{{ config.SUMMARY_START_TIME }}{% endif %}">
                                     <small style="color: #1565c0; font-size: 11px;">选择总结开始的日期和时间</small>
                                 </div>
                                 <div>
                                     <label style="font-size: 12px; color: #1976d2; margin-bottom: 5px; display: block;">结束日期时间:</label>
-                                    <input type="datetime-local" id="summaryEndTime" style="width: 100%;" 
-                                           onchange="updateSummaryPreview()" oninput="updateSummaryPreview()">
+                                    <input type="datetime-local" id="summaryEndTime" name="summaryEndTime" style="width: 100%;" 
+                                           onchange="updateSummaryPreview()" oninput="updateSummaryPreview()"
+                                           value="{% if config.SUMMARY_END_TIME %}{{ config.SUMMARY_END_TIME }}{% endif %}">
                                     <small style="color: #1565c0; font-size: 11px;">选择总结结束的日期和时间</small>
                                 </div>
                             </div>
@@ -2804,8 +2806,6 @@
                                 <input type="time" name="SUMMARY_TIME" value="{{ config.SUMMARY_TIME }}" style="width: 100%;">
                                 <small style="color: #888; font-size: 11px;">系统将在此时间自动生成并发送群聊总结</small>
                             </div>
-                            <!-- 隐藏的默认时间范围配置，用于后端兼容 -->
-                            <input type="hidden" name="SUMMARY_TIME_HOURS" value="{{ config.SUMMARY_TIME_HOURS or 24 }}">
                         </div>
                         
                         <!-- 说明文字 -->
