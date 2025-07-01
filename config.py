@@ -12,14 +12,14 @@
 
 # 用户列表(请配置要和bot说话的账号的微信昵称！)
 # 例如：LISTEN_LIST = [['微信名1', '角色1'],['微信名2', '角色2']]
-LISTEN_LIST = [['微信名1', '角色1']]
+LISTEN_LIST = [['测试群1', '角色1']]
 
 # DeepSeek API 配置
-DEEPSEEK_API_KEY = ''
+DEEPSEEK_API_KEY = 'sk-wiyceuorksjphlaspgzgryeoqgosvdwhnvouobygewhcysfe'
 # 硅基流动API注册地址，免费15元额度 https://cloud.siliconflow.cn/
-DEEPSEEK_BASE_URL = 'https://vg.v1api.cc/v1'
+DEEPSEEK_BASE_URL = 'https://api.siliconflow.cn/v1/'
 # 硅基流动API的模型
-MODEL = 'deepseek-v3-0324'
+MODEL = 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B'
 # 用户和AI对话轮数
 MAX_GROUPS = 5
 
@@ -36,8 +36,8 @@ TEMPERATURE = 1.1
 # Moonshot AI配置（用于图片和表情包识别）
 # API申请https://platform.moonshot.cn/
 MOONSHOT_API_KEY = ''
-MOONSHOT_BASE_URL = 'https://vg.v1api.cc/v1'
-MOONSHOT_MODEL = 'gpt-4o'
+MOONSHOT_BASE_URL = ''
+MOONSHOT_MODEL = ''
 MOONSHOT_TEMPERATURE = 0.8
 ENABLE_IMAGE_RECOGNITION = True
 ENABLE_EMOJI_RECOGNITION = True
@@ -105,8 +105,8 @@ USE_VOICE_CALL_FOR_REMINDERS = False
 
 # 联网API配置
 ENABLE_ONLINE_API = False
-ONLINE_BASE_URL = 'https://vg.v1api.cc/v1'
-ONLINE_MODEL = 'net-gpt-4o-mini'
+ONLINE_BASE_URL = ''
+ONLINE_MODEL = ''
 ONLINE_API_KEY = ''
 ONLINE_API_TEMPERATURE = 0.7
 ONLINE_API_MAX_TOKEN = 2000
@@ -144,4 +144,25 @@ USE_ASSISTANT_FOR_MEMORY_SUMMARY = False
 # 敏感词处理配置
 # 开启后遇到敏感词时自动清除Memory_Temp文件和聊天上下文
 ENABLE_SENSITIVE_CONTENT_CLEARING = True
+
+# === 群聊总结功能配置 ===
+# 是否启用群聊总结功能
+ENABLE_GROUP_SUMMARY = True
+
+# 支持总结的群聊列表
+SUMMARY_GROUP_LIST = ['测试群1']
+
+# 获取消息的时间范围（小时，默认24小时即昨天）
+SUMMARY_TIME_HOURS = 24.0
+
+# 群聊总结使用的Prompt文件（留空则使用内置总结逻辑）
+SUMMARY_PROMPT_FILE = ''
+
+# 每日总结执行时间（24小时制，格式：HH:MM）
+SUMMARY_TIME = '09:00'
+
+# 自定义间隔小时数（仅当SUMMARY_FREQUENCY为'custom'时有效）
+SUMMARY_INTERVAL_HOURS = 24
+
+# --- 配置文件结束 ---
 

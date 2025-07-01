@@ -106,12 +106,13 @@ def validate_config_types(config_path):
         int_fields = ['MAX_GROUPS', 'MAX_TOKEN', 'QUEUE_WAITING_TIME', 'EMOJI_SENDING_PROBABILITY', 
                      'MAX_MESSAGE_LOG_ENTRIES', 'MAX_MEMORY_NUMBER', 'PORT', 'ONLINE_API_MAX_TOKEN',
                      'REQUESTS_TIMEOUT', 'MAX_WEB_CONTENT_LENGTH', 'RESTART_INACTIVITY_MINUTES',
-                     'GROUP_CHAT_RESPONSE_PROBABILITY', 'ASSISTANT_MAX_TOKEN']
+                     'GROUP_CHAT_RESPONSE_PROBABILITY', 'ASSISTANT_MAX_TOKEN', 'SUMMARY_MAX_TOKEN', 'SUMMARY_MAX_MESSAGE_LENGTH']
         
         # 检查应该是浮点数但被保存为字符串的配置项  
         float_fields = ['TEMPERATURE', 'MOONSHOT_TEMPERATURE', 'MIN_COUNTDOWN_HOURS', 'MAX_COUNTDOWN_HOURS',
                        'AVERAGE_TYPING_SPEED', 'RANDOM_TYPING_SPEED_MIN', 'RANDOM_TYPING_SPEED_MAX',
-                       'ONLINE_API_TEMPERATURE', 'RESTART_INTERVAL_HOURS', 'ASSISTANT_TEMPERATURE']
+                       'ONLINE_API_TEMPERATURE', 'RESTART_INTERVAL_HOURS', 'ASSISTANT_TEMPERATURE',
+                       'DEFAULT_SUMMARY_HOURS', 'MAX_SUMMARY_HOURS', 'SUMMARY_TEMPERATURE', 'SUMMARY_SEND_INTERVAL']
         
         for field in int_fields:
             pattern = rf'{field}\s*=\s*[\'"](\d+)[\'"]'
@@ -317,6 +318,16 @@ def submit_config():
                     processed_listen_list.append([nick_stripped, pf_stripped])
         new_values_for_config_py['LISTEN_LIST'] = processed_listen_list
         
+        # 处理群聊总结的群聊列表
+        group_names_from_form = request.form.getlist('group_name')
+        processed_group_list = []
+        if group_names_from_form:
+            for group_name in group_names_from_form:
+                group_name_stripped = group_name.strip()
+                if group_name_stripped:  # 只添加非空的群聊名称
+                    processed_group_list.append(group_name_stripped)
+        new_values_for_config_py['SUMMARY_GROUP_LIST'] = processed_group_list
+        
         new_listen_list_map = {item[0]: item[1] for item in processed_listen_list}
         
         users_whose_prompt_changed = []
@@ -332,14 +343,15 @@ def submit_config():
             'ENABLE_ONLINE_API', 'SEPARATE_ROW_SYMBOLS','ENABLE_SCHEDULED_RESTART',
             'ENABLE_GROUP_AT_REPLY', 'ENABLE_GROUP_KEYWORD_REPLY','GROUP_KEYWORD_REPLY_IGNORE_PROBABILITY', 'REMOVE_PARENTHESES',
             'ENABLE_ASSISTANT_MODEL', 'USE_ASSISTANT_FOR_MEMORY_SUMMARY',
-            'IGNORE_GROUP_CHAT_FOR_AUTO_MESSAGE', 'ENABLE_SENSITIVE_CONTENT_CLEARING'
+            'IGNORE_GROUP_CHAT_FOR_AUTO_MESSAGE', 'ENABLE_SENSITIVE_CONTENT_CLEARING',
+            'ENABLE_GROUP_SUMMARY'
         ]
         for field in boolean_fields:
             new_values_for_config_py[field] = field in request.form
 
         for key_from_form in request.form:
-            if key_from_form in ['nickname', 'prompt_file'] or key_from_form in boolean_fields:
-                continue 
+            if key_from_form in ['nickname', 'prompt_file', 'group_name'] or key_from_form in boolean_fields:
+                continue
 
             value_from_form = request.form[key_from_form].strip()
             
@@ -853,7 +865,8 @@ def index():
                 'ENABLE_ONLINE_API', 'SEPARATE_ROW_SYMBOLS','ENABLE_SCHEDULED_RESTART',
                 'ENABLE_GROUP_AT_REPLY', 'ENABLE_GROUP_KEYWORD_REPLY','GROUP_KEYWORD_REPLY_IGNORE_PROBABILITY','REMOVE_PARENTHESES',
                 'ENABLE_ASSISTANT_MODEL', 'USE_ASSISTANT_FOR_MEMORY_SUMMARY',
-                'IGNORE_GROUP_CHAT_FOR_AUTO_MESSAGE', 'ENABLE_SENSITIVE_CONTENT_CLEARING'
+                'IGNORE_GROUP_CHAT_FOR_AUTO_MESSAGE', 'ENABLE_SENSITIVE_CONTENT_CLEARING',
+                'ENABLE_GROUP_SUMMARY'
             ]
             for field in boolean_fields_from_editor:
                  # 确保这些字段在表单中存在才处理，否则它们可能来自 quick_start

@@ -1446,6 +1446,36 @@ def process_user_messages(user_id):
     online_info = None
 
     try:
+        # --- 新增：群聊总结功能检测 ---
+        if ENABLE_GROUP_SUMMARY:
+            # 检测群聊总结关键词
+            summary_keywords = ['群聊总结', '总结群聊', '生成总结', '聊天总结']
+            if any(keyword in merged_message for keyword in summary_keywords):
+                # 检查是否为指定的总结群聊列表中的群聊
+                if hasattr(config, 'SUMMARY_GROUP_LIST') and config.SUMMARY_GROUP_LIST:
+                    if user_id in config.SUMMARY_GROUP_LIST:
+                        logger.info(f"检测到群聊总结请求，来自群聊 '{user_id}'")
+                        
+                        # 异步处理群聊总结，避免阻塞主线程
+                        def process_summary():
+                            process_group_summary(user_id)
+                        
+                        # 启动后台线程处理总结
+                        summary_thread = threading.Thread(target=process_summary, daemon=True)
+                        summary_thread.start()
+                        
+                        return  # 直接返回，不继续处理其他逻辑
+                    else:
+                        # 不是指定的总结群聊
+                        reply = "此群聊未启用总结功能。请联系管理员在SUMMARY_GROUP_LIST中添加该群聊。"
+                        send_reply(user_id, sender_name, username, merged_message, reply)
+                        return
+                else:
+                    # 未配置总结群聊列表
+                    reply = "群聊总结功能未配置。请联系管理员设置SUMMARY_GROUP_LIST。"
+                    send_reply(user_id, sender_name, username, merged_message, reply)
+                    return
+
         # --- 新增：联网搜索逻辑 ---
         if ENABLE_ONLINE_API:
             # 1. 检测是否需要联网
@@ -1992,6 +2022,88 @@ def summarize_and_save(user_id):
                     os.remove(f)
                 except Exception as e:
                     logger.error(f"清理临时文件失败: {str(e)}")
+
+def process_group_summary(user_id):
+    """处理群聊总结请求"""
+    try:
+        # 发送开始处理的提示
+        wx.SendMsg(msg="收到群聊总结请求，正在分析聊天记录，请稍候...", who=user_id)
+        
+        # 获取聊天记录 - 从持久化目录读取日志文件
+        prompt_name = prompt_mapping.get(user_id, user_id)  # 获取配置的prompt名
+        log_file = os.path.join(root_dir, MEMORY_TEMP_DIR, f'{user_id}_{prompt_name}_log.txt')
+        
+        if not os.path.exists(log_file):
+            wx.SendMsg(msg="抱歉，未找到该群聊的聊天记录文件，请稍后重试。", who=user_id)
+            logger.warning(f"日志文件不存在: {log_file}")
+            return
+        
+        if os.path.getsize(log_file) == 0:
+            wx.SendMsg(msg="抱歉，该群聊的聊天记录为空，无法生成总结。", who=user_id)
+            logger.info(f"空日志文件: {log_file}")
+            return
+        
+        # 读取日志文件
+        with open(log_file, 'r', encoding='utf-8') as f:
+            log_lines = [line.strip() for line in f if line.strip()]
+        
+        if not log_lines:
+            wx.SendMsg(msg="抱歉，没有找到足够的有效聊天记录进行总结。", who=user_id)
+            return
+        
+        # 格式化聊天记录（取最近100条，处理最近50条重要消息）
+        recent_logs = log_lines[-100:] if len(log_lines) > 100 else log_lines
+        formatted_messages = []
+        
+        for log_line in recent_logs[-50:]:  # 只处理最近50条
+            # 过滤掉过短或无意义的消息
+            if len(log_line.strip()) > 2 and not log_line.startswith('['):
+                formatted_messages.append(log_line)
+        
+        if not formatted_messages:
+            wx.SendMsg(msg="抱歉，没有找到足够的有效聊天记录进行总结。", who=user_id)
+            return
+        
+        # 构建总结提示词
+        chat_content = '\n'.join(formatted_messages)
+        summary_prompt = f"""请对以下群聊记录进行总结：
+
+{chat_content}
+
+请提供一个简洁的总结，包含：
+1. 重要提醒和注意事项
+2. 热门话题和讨论要点  
+3. 需要跟进的事项
+4. 其他值得关注的讨论
+
+总结应该简洁明了，突出重点内容。"""
+
+        # 调用AI生成总结
+        summary = get_deepseek_response(summary_prompt, user_id, store_context=False)
+        
+        if summary:
+            # 发送总结到群聊
+            # 如果总结过长，分段发送
+            if len(summary) > 800:
+                parts = [summary[i:i+800] for i in range(0, len(summary), 800)]
+                for i, part in enumerate(parts):
+                    wx.SendMsg(msg=f"📝 群聊总结 ({i+1}/{len(parts)}):\n\n{part}", who=user_id)
+                    if i < len(parts) - 1:
+                        time.sleep(1)  # 分段发送间隔
+            else:
+                wx.SendMsg(msg=f"📝 群聊总结:\n\n{summary}", who=user_id)
+            
+            logger.info(f"群聊总结已成功发送到群聊 '{user_id}'")
+        else:
+            wx.SendMsg(msg="抱歉，群聊总结生成失败，请稍后重试。", who=user_id)
+            logger.error(f"群聊总结生成失败，群聊 '{user_id}'")
+            
+    except Exception as e:
+        logger.error(f"处理群聊总结时发生错误: {str(e)}", exc_info=True)
+        try:
+            wx.SendMsg(msg="抱歉，处理群聊总结时发生错误，请稍后重试。", who=user_id)
+        except:
+            logger.error("发送错误消息失败")
 
 def memory_manager():
     """记忆管理定时任务"""
