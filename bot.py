@@ -2225,14 +2225,13 @@ def get_chat_messages_for_summary_by_date_range(user_id, start_time, end_time):
     return final_messages
 
 def process_group_summary(user_id, custom_time_range=None):
-    """处理群聊总结请求 - 优化版本，支持自定义时间范围和提示词"""
-    import config  # 导入config模块
+    """处理群聊总结请求 - 支持四种时间范围选项"""
+    import config
+    from datetime import datetime, timedelta
+    
     try:
         # 记录开始处理
-        if custom_time_range:
-            logger.info(f"开始处理群聊 '{user_id}' 的总结请求，使用自定义时间范围...")
-        else:
-            logger.info(f"开始处理群聊 '{user_id}' 的总结请求，正在分析聊天记录...")
+        logger.info(f"开始处理群聊 '{user_id}' 的总结请求...")
         
         # 获取群聊的自定义配置
         group_config = None
@@ -2246,28 +2245,53 @@ def process_group_summary(user_id, custom_time_range=None):
                     custom_prompt_file = group_data.get('prompt', '').strip()
                     logger.info(f"找到群聊 '{user_id}' 的配置，提示词: {custom_prompt_file}")
                     break
-            elif isinstance(group_data, str):
-                logger.error(f"群聊总结失败: 未提供有效的时间范围")
-                return
         
-        # 获取聊天记录 - 支持自定义时间范围或使用默认配置
+        # 确定使用的时间范围
         if custom_time_range:
-            # 使用自定义时间范围
-            from datetime import datetime
-            try:
-                start_time = datetime.fromisoformat(custom_time_range['start'].replace('T', ' '))
-                end_time = datetime.fromisoformat(custom_time_range['end'].replace('T', ' '))
-                
-                formatted_messages = get_chat_messages_for_summary_by_date_range(user_id, start_time, end_time)
-                time_description = f"从 {start_time.strftime('%Y-%m-%d %H:%M')} 到 {end_time.strftime('%Y-%m-%d %H:%M')}"
-                
-            except (ValueError, KeyError) as e:
-                logger.error(f"解析自定义时间范围失败: {e}")
-                return  # 直接返回，不使用默认时间范围
+            time_range = custom_time_range
         else:
-            # 没有提供时间范围，记录错误并返回
-            logger.error(f"群聊总结失败: 未提供有效的时间范围")
-            return  # 不进行处理
+            # 使用配置的时间范围
+            time_range = getattr(config, 'SUMMARY_TIME_RANGE', 'yesterday')
+        
+        # 计算时间范围
+        now = datetime.now()
+        
+        if time_range == 'today':
+            # 今天 00:00 到现在
+            start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_time = now
+            time_description = f"今天 ({start_time.strftime('%Y-%m-%d')})"
+            
+        elif time_range == 'yesterday':
+            # 昨天 00:00 到 23:59
+            start_time = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+            end_time = now.replace(hour=23, minute=59, second=59, microsecond=999999) - timedelta(days=1)
+            time_description = f"昨天 ({start_time.strftime('%Y-%m-%d')})"
+            
+        elif time_range == 'last3days':
+            # 过去三天：3天前 00:00 到现在
+            start_time = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=3)
+            end_time = now
+            time_description = f"过去三天 ({start_time.strftime('%Y-%m-%d')} 至 {end_time.strftime('%Y-%m-%d')})"
+            
+        elif time_range == 'thisweek':
+            # 本周：本周一 00:00 到现在
+            days_since_monday = now.weekday()  # 0=Monday, 6=Sunday
+            start_time = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=days_since_monday)
+            end_time = now
+            time_description = f"本周 ({start_time.strftime('%Y-%m-%d')} 至 {end_time.strftime('%Y-%m-%d')})"
+            
+        else:
+            # 不支持的时间范围，使用昨天作为默认
+            logger.warning(f"不支持的时间范围 '{time_range}'，使用昨天作为默认")
+            start_time = now.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+            end_time = now.replace(hour=23, minute=59, second=59, microsecond=999999) - timedelta(days=1)
+            time_description = f"昨天 ({start_time.strftime('%Y-%m-%d')})"
+        
+        logger.info(f"使用时间范围: {time_range} -> {time_description}")
+        
+        # 获取聊天记录
+        formatted_messages = get_chat_messages_for_summary_by_date_range(user_id, start_time, end_time)
         
         if not formatted_messages:
             logger.warning(f"群聊总结跳过: 群聊 '{user_id}' 在{time_description}内没有找到任何聊天记录")
@@ -2341,21 +2365,6 @@ def process_group_summary(user_id, custom_time_range=None):
             logger.info(f"-" * 80)
             logger.info(summary)
             logger.info(f"=" * 80)
-            
-            # 可选：将总结保存到文件
-            summary_file = os.path.join(root_dir, f"summary_{user_id}_{int(time.time())}.txt")
-            try:
-                with open(summary_file, 'w', encoding='utf-8') as f:
-                    f.write(f"群聊总结 - {user_id}\n")
-                    f.write(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                    f.write(f"时间范围: {time_description}\n")
-                    f.write(f"消息数量: {len(formatted_messages)}条\n")
-                    f.write(f"自定义提示词: {custom_prompt_file if custom_prompt_file else '默认'}\n")
-                    f.write(f"=" * 80 + "\n")
-                    f.write(summary)
-                logger.info(f"群聊总结已保存到文件: {summary_file}")
-            except Exception as save_error:
-                logger.warning(f"保存总结文件失败: {save_error}")
             
             logger.info(f"群聊总结生成完成 - '{user_id}'，使用了{len(formatted_messages)}条消息")
         else:
@@ -3271,18 +3280,8 @@ def recurring_reminder_checker():
                                 # 直接触发群聊总结处理
                                 try:
                                     logger.info(f"定时触发群聊 '{group_name}' 的总结")
-                                    
-                                    # 检查是否有保存的时间范围配置
-                                    custom_time_range = None
-                                    if hasattr(config, 'SUMMARY_START_TIME') and hasattr(config, 'SUMMARY_END_TIME') and config.SUMMARY_START_TIME and config.SUMMARY_END_TIME:
-                                        custom_time_range = {
-                                            'start': config.SUMMARY_START_TIME,
-                                            'end': config.SUMMARY_END_TIME
-                                        }
-                                        logger.info(f"使用配置的默认时间范围: {config.SUMMARY_START_TIME} 至 {config.SUMMARY_END_TIME}")
-                                    
-                                    # 调用总结处理函数，传入时间范围
-                                    process_group_summary(group_name, custom_time_range)
+                                    # 调用总结处理函数，使用配置的时间范围
+                                    process_group_summary(group_name)
                                 except Exception as e:
                                     logger.error(f"定时触发群聊 '{group_name}' 总结失败: {e}")
                         

@@ -335,17 +335,10 @@ def submit_config():
                         processed_group_list.append(group_name_stripped)
         new_values_for_config_py['SUMMARY_GROUP_LIST'] = processed_group_list
         
-        # 处理群聊总结时间范围
-        summary_start_time = request.form.get('summaryStartTime', '')
-        summary_end_time = request.form.get('summaryEndTime', '')
-        if summary_start_time and summary_end_time:
-            try:
-                # 保存时间范围配置为两个独立字段
-                new_values_for_config_py['SUMMARY_START_TIME'] = summary_start_time
-                new_values_for_config_py['SUMMARY_END_TIME'] = summary_end_time
-                app.logger.info(f"保存群聊总结默认时间范围: {summary_start_time} 至 {summary_end_time}")
-            except Exception as e:
-                app.logger.error(f"保存群聊总结默认时间范围失败: {e}")
+        # 处理群聊总结时间范围选择
+        summary_time_range = request.form.get('SUMMARY_TIME_RANGE', 'yesterday')
+        new_values_for_config_py['SUMMARY_TIME_RANGE'] = summary_time_range
+        app.logger.info(f"保存群聊总结时间范围: {summary_time_range}")
         
         new_listen_list_map = {item[0]: item[1] for item in processed_listen_list}
         

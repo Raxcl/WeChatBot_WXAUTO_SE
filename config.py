@@ -153,11 +153,10 @@ ENABLE_GROUP_SUMMARY = True
 SUMMARY_GROUP_LIST = [{'group': '测试群1', 'prompt': '群聊总结官'}, {'group': '测试群2', 'prompt': '高冷群聊总结助手'}]
 
 # 每日总结执行时间（24小时制，格式：HH:MM）
-SUMMARY_TIME = '19:04'
+SUMMARY_TIME = '19:46'
 
-# 群聊总结默认时间范围
-SUMMARY_START_TIME = '2025-07-01T00:00'
-SUMMARY_END_TIME = '2025-07-01T19:02'
+# 群聊总结时间范围选项: 'today', 'yesterday', 'last3days', 'thisweek'
+SUMMARY_TIME_RANGE = 'today'
 
 # --- 配置文件结束 ---
 
