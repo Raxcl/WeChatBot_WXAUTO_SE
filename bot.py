@@ -1568,6 +1568,36 @@ def process_user_messages(user_id):
             logger.error(f"用户消息处理失败 (用户: {user_id}): {str(e)}")
             raise
         
+def send_complete_message(user_id, message):
+    """发送完整消息，不分段，专用于群聊总结等长文本发送"""
+    global is_sending_message
+    if not message:
+        logger.warning(f"尝试向 {user_id} 发送空消息。")
+        return
+
+    # 等待发送队列
+    wait_start_time = time.time()
+    MAX_WAIT_SENDING = 15.0
+    while is_sending_message:
+        if time.time() - wait_start_time > MAX_WAIT_SENDING:
+            logger.warning(f"等待 is_sending_message 标志超时，准备向 {user_id} 发送完整消息，继续执行。")
+            break
+        logger.debug(f"等待向 {user_id} 发送完整消息，另一个发送正在进行中。")
+        time.sleep(0.5)
+
+    try:
+        is_sending_message = True
+        logger.info(f"准备向 {user_id} 发送完整消息（不分段）")
+        
+        # 直接发送完整消息，不进行分割处理
+        wx.SendMsg(msg=message, who=user_id)
+        logger.info(f"已向 {user_id} 发送完整消息")
+        
+    except Exception as e:
+        logger.error(f"向 {user_id} 发送完整消息失败: {str(e)}", exc_info=True)
+    finally:
+        is_sending_message = False
+
 def send_reply(user_id, sender_name, username, original_merged_message, reply):
     """发送回复消息，可能分段发送，并管理发送标志。"""
     global is_sending_message
@@ -2062,7 +2092,7 @@ def get_chat_messages_for_summary(user_id, hours):
     now = datetime.now()
     time_threshold = now - dt.timedelta(hours=hours)
     
-    logger.info(f"群聊总结时间范围: {hours} 小时，截止时间: {time_threshold}")
+    logger.info(f"群聊总结时间范围: {hours} 小时，从 {time_threshold.strftime('%Y-%m-%d %H:%M:%S')} 到 {now.strftime('%Y-%m-%d %H:%M:%S')}")
     
     # 检查永久化存档目录
     archive_dir = os.path.join(root_dir, CHAT_ARCHIVE_DIR)
@@ -2121,11 +2151,87 @@ def get_chat_messages_for_summary(user_id, hours):
     logger.info(f"从永久化存档获取到 {len(final_messages)} 条有效消息，时间范围: {hours}小时")
     return final_messages
 
-def process_group_summary(user_id):
-    """处理群聊总结请求 - 优化版本，优先使用永久化存档，支持按时间范围和自定义提示词"""
+def get_chat_messages_for_summary_by_date_range(user_id, start_time, end_time):
+    """从永久化存档中获取指定日期时间范围内的聊天消息
+    
+    Args:
+        user_id: 用户/群聊ID
+        start_time: 开始时间（datetime对象）
+        end_time: 结束时间（datetime对象）
+        
+    Returns:
+        list: 格式化的聊天消息列表
+    """
+    prompt_name = prompt_mapping.get(user_id, user_id)
+    
+    logger.info(f"群聊总结自定义时间范围: 从 {start_time.strftime('%Y-%m-%d %H:%M:%S')} 到 {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # 检查永久化存档目录
+    archive_dir = os.path.join(root_dir, CHAT_ARCHIVE_DIR)
+    if not os.path.exists(archive_dir):
+        raise FileNotFoundError(f"永久化存档目录不存在: {archive_dir}，请确保永久化日志系统正常运行")
+    
+    all_messages = []
+    
+    # 计算需要检查的日期范围
+    start_date = start_time.date()
+    end_date = end_time.date()
+    current_date = start_date
+    
+    while current_date <= end_date:
+        archive_file = os.path.join(archive_dir, f'{user_id}_{prompt_name}_{current_date.strftime("%Y-%m-%d")}.txt')
+        
+        if os.path.exists(archive_file):
+            with open(archive_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # 解析每行的时间戳并过滤
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith('[系统]'):
+                    continue
+                
+                # 解析时间戳：格式为 2025-01-22 Wednesday 14:30:25 | [发言者] 消息内容
+                if ' | ' in line:
+                    try:
+                        timestamp_str = line.split(' | ')[0]
+                        # 移除星期几部分
+                        timestamp_parts = timestamp_str.split()
+                        if len(timestamp_parts) >= 3:
+                            # 重构为：YYYY-MM-DD HH:MM:SS
+                            clean_timestamp = f"{timestamp_parts[0]} {timestamp_parts[-1]}"
+                            message_time = datetime.strptime(clean_timestamp, '%Y-%m-%d %H:%M:%S')
+                            
+                            # 检查是否在指定时间范围内
+                            if start_time <= message_time <= end_time:
+                                all_messages.append((message_time, line))
+                    except (ValueError, IndexError):
+                        # 时间戳解析失败，跳过该消息
+                        continue
+        
+        current_date += dt.timedelta(days=1)
+    
+    # 按时间排序并格式化
+    all_messages.sort(key=lambda x: x[0])
+    formatted_messages = [msg[1] for msg in all_messages]
+    
+    # 最终过滤
+    final_messages = []
+    for msg in formatted_messages:
+        if len(msg.strip()) > 0 and not msg.startswith('[系统]'):
+            final_messages.append(msg)
+    
+    logger.info(f"从永久化存档获取到 {len(final_messages)} 条有效消息，自定义时间范围")
+    return final_messages
+
+def process_group_summary(user_id, custom_time_range=None):
+    """处理群聊总结请求 - 优化版本，支持自定义时间范围和提示词"""
     try:
         # 记录开始处理
-        logger.info(f"开始处理群聊 '{user_id}' 的总结请求，正在分析聊天记录...")
+        if custom_time_range:
+            logger.info(f"开始处理群聊 '{user_id}' 的总结请求，使用自定义时间范围...")
+        else:
+            logger.info(f"开始处理群聊 '{user_id}' 的总结请求，正在分析聊天记录...")
         
         # 获取群聊的自定义配置
         group_config = None
@@ -2144,14 +2250,31 @@ def process_group_summary(user_id):
                     group_config = {'group': user_id, 'prompt': ''}
                     break
         
-        # 获取聊天记录 - 优先从永久化存档读取，然后fallback到Memory_Temp
-        formatted_messages = get_chat_messages_for_summary(user_id, SUMMARY_TIME_HOURS)
+        # 获取聊天记录 - 支持自定义时间范围或使用默认配置
+        if custom_time_range:
+            # 使用自定义时间范围
+            from datetime import datetime
+            try:
+                start_time = datetime.fromisoformat(custom_time_range['start'].replace('T', ' '))
+                end_time = datetime.fromisoformat(custom_time_range['end'].replace('T', ' '))
+                
+                formatted_messages = get_chat_messages_for_summary_by_date_range(user_id, start_time, end_time)
+                time_description = f"从 {start_time.strftime('%Y-%m-%d %H:%M')} 到 {end_time.strftime('%Y-%m-%d %H:%M')}"
+                
+            except (ValueError, KeyError) as e:
+                logger.error(f"解析自定义时间范围失败: {e}")
+                formatted_messages = get_chat_messages_for_summary(user_id, SUMMARY_TIME_HOURS)
+                time_description = f"过去{SUMMARY_TIME_HOURS}小时（回退到默认范围）"
+        else:
+            # 使用默认时间范围
+            formatted_messages = get_chat_messages_for_summary(user_id, SUMMARY_TIME_HOURS)
+            time_description = f"过去{SUMMARY_TIME_HOURS}小时"
         
         if not formatted_messages:
-            logger.warning(f"群聊总结跳过: 群聊 '{user_id}' 在过去{SUMMARY_TIME_HOURS}小时内没有找到任何聊天记录")
+            logger.warning(f"群聊总结跳过: 群聊 '{user_id}' 在{time_description}内没有找到任何聊天记录")
             return
         
-        logger.info(f"准备总结 {len(formatted_messages)} 条有效消息（来源：永久化存档+临时记录）")
+        logger.info(f"准备总结 {len(formatted_messages)} 条有效消息（时间范围：{time_description}）")
         
         # 构建聊天记录内容
         chat_content = '\n'.join(formatted_messages)
@@ -2168,7 +2291,7 @@ def process_group_summary(user_id):
                     # 使用自定义提示词进行总结
                     summary_prompt = f"""{custom_prompt_content}
 
-以下是过去{SUMMARY_TIME_HOURS}小时的群聊记录：
+以下是{time_description}的群聊记录：
 
 {chat_content}
 
@@ -2178,23 +2301,42 @@ def process_group_summary(user_id):
                 except Exception as e:
                     logger.error(f"读取自定义提示词文件失败: {e}")
                     # fallback到默认提示词
-                    summary_prompt = build_default_summary_prompt(chat_content, SUMMARY_TIME_HOURS)
+                    summary_prompt = build_default_summary_prompt(chat_content, time_description)
             else:
                 logger.warning(f"自定义提示词文件不存在: {custom_prompt_path}")
                 # fallback到默认提示词
-                summary_prompt = build_default_summary_prompt(chat_content, SUMMARY_TIME_HOURS)
+                summary_prompt = build_default_summary_prompt(chat_content, time_description)
         else:
             # 使用默认总结提示词
-            summary_prompt = build_default_summary_prompt(chat_content, SUMMARY_TIME_HOURS)
+            summary_prompt = build_default_summary_prompt(chat_content, time_description)
         
         # 调用AI生成总结
         summary = get_deepseek_response(summary_prompt, f"{user_id}_summary", store_context=False, is_summary=True)
         
         if summary:
+            # 发送总结到群聊中
+            try:
+                # 构建总结消息的头部信息
+                summary_header = f"📝 群聊总结报告\n" \
+                                f"⏰ 时间范围: {time_description}\n" \
+                                f"📊 消息数量: {len(formatted_messages)}条\n" \
+                                f"{'🎭 使用提示词: ' + custom_prompt_file if custom_prompt_file else '📋 默认总结逻辑'}\n" \
+                                f"{'=' * 30}\n\n"
+                
+                # 完整的总结消息
+                full_summary_message = summary_header + summary
+                
+                # 发送总结消息到群聊（使用不分段发送）
+                send_complete_message(user_id, full_summary_message)
+                logger.info(f"群聊总结已发送到群聊 '{user_id}'（完整消息，不分段）")
+                
+            except Exception as send_error:
+                logger.error(f"发送群聊总结失败: {send_error}")
+            
             # 在日志中显示总结结果
             logger.info(f"=" * 80)
             logger.info(f"📝 群聊总结 - {user_id}")
-            logger.info(f"时间范围: 过去{SUMMARY_TIME_HOURS}小时")
+            logger.info(f"时间范围: {time_description}")
             logger.info(f"消息数量: {len(formatted_messages)}条")
             logger.info(f"自定义提示词: {custom_prompt_file if custom_prompt_file else '默认'}")
             logger.info(f"-" * 80)
@@ -2207,7 +2349,7 @@ def process_group_summary(user_id):
                 with open(summary_file, 'w', encoding='utf-8') as f:
                     f.write(f"群聊总结 - {user_id}\n")
                     f.write(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-                    f.write(f"时间范围: 过去{SUMMARY_TIME_HOURS}小时\n")
+                    f.write(f"时间范围: {time_description}\n")
                     f.write(f"消息数量: {len(formatted_messages)}条\n")
                     f.write(f"自定义提示词: {custom_prompt_file if custom_prompt_file else '默认'}\n")
                     f.write(f"=" * 80 + "\n")
@@ -2223,9 +2365,9 @@ def process_group_summary(user_id):
     except Exception as e:
         logger.error(f"处理群聊总结时发生错误 - '{user_id}': {str(e)}", exc_info=True)
 
-def build_default_summary_prompt(chat_content, hours):
+def build_default_summary_prompt(chat_content, time_description):
     """构建默认的群聊总结提示词"""
-    return f"""请对以下过去{hours}小时的群聊记录进行总结：
+    return f"""请对以下{time_description}的群聊记录进行总结：
 
 {chat_content}
 
@@ -2235,7 +2377,7 @@ def build_default_summary_prompt(chat_content, hours):
 3. 需要跟进的事项
 4. 其他值得关注的讨论
 
-总结应该简洁明了，突出重点内容，便于群成员快速了解近期讨论的核心内容。"""
+总结应该简洁明了，突出重点内容，便于群成员快速了解讨论的核心内容。"""
 
 def memory_manager():
     """记忆管理定时任务"""
@@ -3262,10 +3404,15 @@ def group_summary_request_processor():
                             logger.warning(f"群聊总结请求缺少群聊名称: {request}")
                             continue
                         
-                        logger.info(f"开始处理群聊 '{group_name}' 的总结请求")
+                        # 获取时间范围信息
+                        time_range = request.get('time_range')
+                        if time_range:
+                            logger.info(f"开始处理群聊 '{group_name}' 的总结请求，使用自定义时间范围")
+                        else:
+                            logger.info(f"开始处理群聊 '{group_name}' 的总结请求，使用默认时间范围")
                         
-                        # 调用现有的群聊总结处理函数
-                        process_group_summary(group_name)
+                        # 调用群聊总结处理函数，传递时间范围信息
+                        process_group_summary(group_name, custom_time_range=time_range)
                         
                         # 更新请求状态为已完成
                         request['status'] = 'completed'

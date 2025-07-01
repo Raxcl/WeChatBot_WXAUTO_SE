@@ -5,5 +5,34 @@
     "created_at": 1751341363.4606695,
     "request_id": "测试群1_1751341363",
     "processed_at": 1751341391.2041276
+  },
+  {
+    "group_name": "测试群1",
+    "status": "completed",
+    "created_at": 1751350381.4834616,
+    "request_id": "测试群1_1751350381",
+    "processed_at": 1751350448.5011532
+  },
+  {
+    "group_name": "测试群1",
+    "status": "completed",
+    "created_at": 1751353634.715141,
+    "request_id": "测试群1_1751353634",
+    "time_range": {
+      "start": "2025-06-30T00:00",
+      "end": "2025-06-30T23:59"
+    },
+    "processed_at": 1751353641.7809055
+  },
+  {
+    "group_name": "测试群1",
+    "status": "completed",
+    "created_at": 1751354715.812913,
+    "request_id": "测试群1_1751354715",
+    "time_range": {
+      "start": "2025-07-01T00:00",
+      "end": "2025-07-01T15:08"
+    },
+    "processed_at": 1751354788.0658474
   }
 ]

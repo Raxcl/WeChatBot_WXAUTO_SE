@@ -1384,7 +1384,7 @@ def clear_chat_context(username):
 @app.route('/trigger_single_group_summary', methods=['POST'])
 @login_required 
 def trigger_single_group_summary():
-    """触发单个群聊的总结生成"""
+    """触发单个群聊的总结生成，支持自定义时间范围"""
     try:
         data = request.get_json()
         if not data or 'group_name' not in data:
@@ -1393,6 +1393,24 @@ def trigger_single_group_summary():
         group_name = data['group_name'].strip()
         if not group_name:
             return jsonify({'error': '群聊名称不能为空'}), 400
+        
+        # 处理时间范围参数
+        time_range = data.get('time_range')
+        time_info = ""
+        
+        if time_range and 'start' in time_range and 'end' in time_range:
+            try:
+                from datetime import datetime
+                start_time = datetime.fromisoformat(time_range['start'].replace('T', ' '))
+                end_time = datetime.fromisoformat(time_range['end'].replace('T', ' '))
+                
+                if start_time >= end_time:
+                    return jsonify({'error': '结束时间必须晚于开始时间'}), 400
+                    
+                time_info = f" ({start_time.strftime('%Y-%m-%d %H:%M')} 至 {end_time.strftime('%Y-%m-%d %H:%M')})"
+                
+            except ValueError as e:
+                return jsonify({'error': f'时间格式错误: {str(e)}'}), 400
         
         # 创建群聊总结请求文件，让bot程序处理
         group_summary_requests_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'group_summary_requests.json')
@@ -1423,14 +1441,19 @@ def trigger_single_group_summary():
                     'created_at': time.time(),
                     'request_id': f"{group_name}_{int(time.time())}"
                 }
+                
+                # 添加时间范围信息（如果有）
+                if time_range:
+                    new_request['time_range'] = time_range
+                
                 requests_list.append(new_request)
                 
                 # 写入文件
                 with open(group_summary_requests_file, 'w', encoding='utf-8') as f:
                     json.dump(requests_list, f, ensure_ascii=False, indent=2)
                 
-                app.logger.info(f"已创建群聊总结请求: {group_name}")
-                return jsonify({'message': f'群聊 "{group_name}" 的总结请求已提交，Bot程序将尽快处理'})
+                app.logger.info(f"已创建群聊总结请求: {group_name}{time_info}")
+                return jsonify({'message': f'群聊 "{group_name}" 的总结请求已提交{time_info}，Bot程序将尽快处理'})
                 
         except Exception as file_error:
             app.logger.error(f"处理群聊总结请求文件时出错: {file_error}")

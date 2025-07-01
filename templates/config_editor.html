@@ -665,12 +665,27 @@
     </style>
 
     <script>
+        // 全局函数定义
+        function showAlert(message, isSuccess) {
+            const alertDiv = document.getElementById('config-alert');
+            if (!alertDiv) return;
+            alertDiv.innerText = message;
+            alertDiv.style.backgroundColor = isSuccess ? '#4CAF50' : '#ff4444';
+            alertDiv.style.display = 'block';
+            setTimeout(() => {
+                alertDiv.style.display = 'none';
+            }, 5000);
+        }
+
         document.addEventListener('DOMContentLoaded', function () {
             loadReminders();
             startReminderRefresh();
             setupReminderInputListeners();
             startChatContextUserPolling();
             setupGroupChatOptionsVisibility();
+            
+            // 恢复保存的时间选择
+            restoreSavedTimeSelection();
 
             document.querySelectorAll('#reminder-list').forEach(container => {
                 container.addEventListener('input', debounce(saveReminders, 500));
@@ -1134,17 +1149,6 @@
                 }
             }
             initBotStatus();
-
-            function showAlert(message, isSuccess) {
-                const alertDiv = document.getElementById('config-alert');
-                if (!alertDiv) return;
-                alertDiv.innerText = message;
-                alertDiv.style.backgroundColor = isSuccess ? '#4CAF50' : '#ff4444';
-                alertDiv.style.display = 'block';
-                setTimeout(() => {
-                    alertDiv.style.display = 'none';
-                }, 5000);
-            }
 
             async function saveConfig() {
                 const form = document.getElementById('configForm');
@@ -2072,6 +2076,134 @@
             }
         }
 
+        // 时间范围预览更新
+        function updateSummaryPreview() {
+            const startInput = document.getElementById('summaryStartTime');
+            const endInput = document.getElementById('summaryEndTime');
+            const previewDiv = document.getElementById('summaryPreview');
+            
+            if (!startInput || !endInput || !previewDiv) return;
+            
+            const startTime = startInput.value;
+            const endTime = endInput.value;
+            
+            // 保存到localStorage
+            if (startTime) localStorage.setItem('summaryStartTime', startTime);
+            if (endTime) localStorage.setItem('summaryEndTime', endTime);
+            
+            if (startTime && endTime) {
+                const start = new Date(startTime);
+                const end = new Date(endTime);
+                
+                if (start >= end) {
+                    previewDiv.textContent = '❌ 结束时间必须晚于开始时间';
+                    previewDiv.style.color = '#d32f2f';
+                    return;
+                }
+                
+                const duration = (end - start) / (1000 * 60 * 60); // 小时数
+                const startStr = start.toLocaleString('zh-CN', {
+                    year: 'numeric', month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit'
+                });
+                const endStr = end.toLocaleString('zh-CN', {
+                    year: 'numeric', month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit'
+                });
+                
+                previewDiv.textContent = `${startStr} 至 ${endStr} (约${duration.toFixed(1)}小时)`;
+                previewDiv.style.color = '#1565c0';
+            } else {
+                previewDiv.textContent = '请选择开始和结束时间';
+                previewDiv.style.color = '#1565c0';
+            }
+        }
+        
+        // 恢复保存的时间选择
+        function restoreSavedTimeSelection() {
+            const startInput = document.getElementById('summaryStartTime');
+            const endInput = document.getElementById('summaryEndTime');
+            
+            if (startInput && endInput) {
+                const savedStartTime = localStorage.getItem('summaryStartTime');
+                const savedEndTime = localStorage.getItem('summaryEndTime');
+                
+                if (savedStartTime) {
+                    startInput.value = savedStartTime;
+                }
+                if (savedEndTime) {
+                    endInput.value = savedEndTime;
+                }
+                
+                // 如果有保存的时间，更新预览
+                if (savedStartTime || savedEndTime) {
+                    updateSummaryPreview();
+                }
+            }
+        }
+        
+        // 快速时间范围设置
+        function setQuickTimeRange(type) {
+            const startInput = document.getElementById('summaryStartTime');
+            const endInput = document.getElementById('summaryEndTime');
+            
+            if (!startInput || !endInput) return;
+            
+            const now = new Date();
+            let start, end;
+            
+            switch (type) {
+                case 'yesterday':
+                    // 昨天 00:00 到 23:59
+                    start = new Date(now);
+                    start.setDate(start.getDate() - 1);
+                    start.setHours(0, 0, 0, 0);
+                    end = new Date(start);
+                    end.setHours(23, 59, 0, 0);
+                    break;
+                    
+                case 'today':
+                    // 今天 00:00 到现在
+                    start = new Date(now);
+                    start.setHours(0, 0, 0, 0);
+                    end = new Date(now);
+                    break;
+                    
+                case 'last24h':
+                    // 过去24小时
+                    end = new Date(now);
+                    start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+                    break;
+                    
+                case 'last3days':
+                    // 过去3天
+                    end = new Date(now);
+                    start = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+                    break;
+                    
+                default:
+                    return;
+            }
+            
+            // 格式化为datetime-local格式
+            const formatDateTime = (date) => {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${year}-${month}-${day}T${hours}:${minutes}`;
+            };
+            
+            startInput.value = formatDateTime(start);
+            endInput.value = formatDateTime(end);
+            
+            // 保存到localStorage并更新预览
+            localStorage.setItem('summaryStartTime', startInput.value);
+            localStorage.setItem('summaryEndTime', endInput.value);
+            updateSummaryPreview();
+        }
+
         // 群聊总结功能：触发单个群聊总结
         async function triggerSingleGroupSummary(button) {
             const entry = button.closest('.entry');
@@ -2083,23 +2215,70 @@
                 return;
             }
             
+            // 获取时间范围
+            const startInput = document.getElementById('summaryStartTime');
+            const endInput = document.getElementById('summaryEndTime');
+            let timeRange = null;
+            
+            // 校验时间选择
+            if (!startInput || !endInput) {
+                showAlert('时间选择组件未找到，请刷新页面重试！', false);
+                return;
+            }
+            
+            if (!startInput.value || !endInput.value) {
+                showAlert('⏰ 请先在上方选择开始时间和结束时间！', false);
+                // 滚动到时间选择区域
+                const timeRangeSection = document.querySelector('div[style*="background: #e3f2fd"]');
+                if (timeRangeSection) {
+                    timeRangeSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    // 高亮提示时间选择区域
+                    timeRangeSection.style.boxShadow = '0 0 15px rgba(33, 150, 243, 0.5)';
+                    setTimeout(() => {
+                        timeRangeSection.style.boxShadow = '';
+                    }, 3000);
+                }
+                return;
+            }
+            
+            const startTime = new Date(startInput.value);
+            const endTime = new Date(endInput.value);
+            
+            if (startTime >= endTime) {
+                showAlert('⚠️ 结束时间必须晚于开始时间！', false);
+                return;
+            }
+            
+            timeRange = {
+                start: startInput.value,
+                end: endInput.value
+            };
+            
             const originalText = button.textContent;
             button.disabled = true;
             button.textContent = '生成中...';
             
             try {
+                const requestBody = { group_name: groupName };
+                if (timeRange) {
+                    requestBody.time_range = timeRange;
+                }
+                
                 const response = await fetch('/trigger_single_group_summary', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-Requested-With': 'XMLHttpRequest'
                     },
-                    body: JSON.stringify({ group_name: groupName })
+                    body: JSON.stringify(requestBody)
                 });
                 
                 if (response.ok) {
                     const result = await response.json();
-                    showAlert(result.message || `群聊 "${groupName}" 的总结已触发`, true);
+                    const timeInfo = timeRange ? 
+                        `(${new Date(timeRange.start).toLocaleString('zh-CN')} 至 ${new Date(timeRange.end).toLocaleString('zh-CN')})` : 
+                        '(默认时间范围)';
+                    showAlert(result.message || `群聊 "${groupName}" 的总结已触发 ${timeInfo}`, true);
                 } else {
                     const errorData = await response.json().catch(() => ({ detail: "未知错误" }));
                     showAlert(`触发群聊总结失败: ${errorData.detail || errorData.message || '未知错误'}`, false);
@@ -2139,6 +2318,8 @@
         }
         window.addSummaryGroup = addSummaryGroup;
         window.triggerSingleGroupSummary = triggerSingleGroupSummary;
+        window.updateSummaryPreview = updateSummaryPreview;
+        window.setQuickTimeRange = setQuickTimeRange;
 
         function removeSummaryGroup(button) {
             const entries = document.querySelectorAll('#summary-group-list .entry');
@@ -2559,6 +2740,40 @@
                         <small>启用后，在指定群聊中发送"群聊总结"、"总结群聊"、"生成总结"或"聊天总结"即可生成群聊精华总结</small>
                     </div>
                     
+                    <!-- 总结配置 -->
+                    <div class="form-group">
+                        <label style="display: block; margin-bottom: 15px; font-weight: bold;">总结配置</label>
+                        
+                        <!-- 手动总结时间选择配置 -->
+                        <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; border-left: 4px solid #2196F3; margin-bottom: 15px;">
+                            <div style="font-weight: 500; color: #1976d2; margin-bottom: 10px;">📅 手动生成总结 - 时间范围选择</div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                                <div>
+                                    <label style="font-size: 12px; color: #1976d2; margin-bottom: 5px; display: block;">开始日期时间:</label>
+                                    <input type="datetime-local" id="summaryStartTime" style="width: 100%;" 
+                                           onchange="updateSummaryPreview()" oninput="updateSummaryPreview()">
+                                    <small style="color: #1565c0; font-size: 11px;">选择总结开始的日期和时间</small>
+                                </div>
+                                <div>
+                                    <label style="font-size: 12px; color: #1976d2; margin-bottom: 5px; display: block;">结束日期时间:</label>
+                                    <input type="datetime-local" id="summaryEndTime" style="width: 100%;" 
+                                           onchange="updateSummaryPreview()" oninput="updateSummaryPreview()">
+                                    <small style="color: #1565c0; font-size: 11px;">选择总结结束的日期和时间</small>
+                                </div>
+                            </div>
+                            <div style="margin-top: 10px; padding: 8px; background: #bbdefb; border-radius: 4px;">
+                                <div style="font-size: 13px; color: #0d47a1; font-weight: 500;">预览时间范围:</div>
+                                <div id="summaryPreview" style="font-size: 12px; color: #1565c0;">请选择开始和结束时间</div>
+                                <div style="font-size: 11px; color: #1565c0; margin-top: 5px; font-style: italic;">💡 此时间范围将用于下方群聊管理中的"生成总结"按钮</div>
+                            </div>
+                            <div style="margin-top: 10px;">
+                                <button type="button" onclick="setQuickTimeRange('yesterday')" style="background: #2196F3; color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 11px; margin-right: 5px;">昨天</button>
+                                <button type="button" onclick="setQuickTimeRange('today')" style="background: #2196F3; color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 11px; margin-right: 5px;">今天</button>
+                                <button type="button" onclick="setQuickTimeRange('last24h')" style="background: #2196F3; color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 11px; margin-right: 5px;">过去24小时</button>
+                                <button type="button" onclick="setQuickTimeRange('last3days')" style="background: #2196F3; color: white; border: none; padding: 4px 8px; border-radius: 3px; cursor: pointer; font-size: 11px;">过去3天</button>
+                            </div>
+                        </div>
+                    
                     <!-- 群聊列表管理 -->
                     <div class="form-group">
                         <label style="display: block; margin-bottom: 10px; font-weight: bold;">群聊管理</label>
@@ -2580,34 +2795,30 @@
                         <button type="button" onclick="addSummaryGroup()" style="background: #4CAF50; color: white; border: none; padding: 8px 15px; border-radius: 3px; cursor: pointer; margin-top: 10px;">添加群聊</button>
                         <small style="display: block; margin-top: 10px; color: #777;">请填写在"用户列表"中配置的群聊名称，每个群聊可以配置独立的总结提示词</small>
                     </div>
-                    
-                    <!-- 配置项一行展示 -->
-                    <div class="form-group">
-                        <label style="display: block; margin-bottom: 10px; font-weight: bold;">总结配置</label>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; align-items: end;">
-                            <!-- 消息范围 -->
-                            <div>
-                                <label style="font-size: 12px; color: #666;">消息范围 (小时):</label>
-                                <input type="number" step="0.5" min="1" max="72" name="SUMMARY_TIME_HOURS" value="{{ config.SUMMARY_TIME_HOURS }}" style="width: 100%;">
-                            </div>
-                            
-
-                            
-                            <!-- 每日总结时间 -->
-                            <div>
-                                <label style="font-size: 12px; color: #666;">每日总结时间:</label>
+                        
+                        <!-- 每日自动总结配置 -->
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                            <label style="display: block; margin-bottom: 10px; font-weight: 500; color: #333;">⏰ 每日自动总结</label>
+                            <div style="max-width: 300px;">
+                                <label style="font-size: 12px; color: #666; margin-bottom: 5px; display: block;">每日总结时间:</label>
                                 <input type="time" name="SUMMARY_TIME" value="{{ config.SUMMARY_TIME }}" style="width: 100%;">
+                                <small style="color: #888; font-size: 11px;">系统将在此时间自动生成并发送群聊总结</small>
                             </div>
+                            <!-- 隐藏的默认时间范围配置，用于后端兼容 -->
+                            <input type="hidden" name="SUMMARY_TIME_HOURS" value="{{ config.SUMMARY_TIME_HOURS or 24 }}">
                         </div>
                         
                         <!-- 说明文字 -->
-                        <div style="margin-top: 10px; font-size: 12px; color: #777; line-height: 1.4;">
-                            <div style="margin-bottom: 5px;"><strong>消息范围:</strong> 获取指定时间范围内的群聊消息进行总结，范围：1-72小时</div>
-                            <div><strong>每日总结:</strong> 系统将在指定时间自动生成群聊总结并发送到对应群聊</div>
-                            <div style="margin-top: 10px;"><strong>提示词配置:</strong> 每个群聊可在上方"群聊管理"中单独配置提示词文件，留空则使用内置总结逻辑</div>
+                        <div style="margin-top: 15px; font-size: 12px; color: #666; line-height: 1.5;">
+                            <div style="margin-bottom: 8px;"><strong>使用说明:</strong></div>
+                            <ul style="margin: 0; padding-left: 20px;">
+                                <li style="margin-bottom: 4px;"><strong>手动生成</strong>：先在上方选择时间范围，然后在群聊管理中点击"生成总结"</li>
+                                <li style="margin-bottom: 4px;"><strong>快速总结</strong>：在群聊中发送"群聊总结"，使用智能时间范围</li>
+                                <li style="margin-bottom: 4px;"><strong>定时总结</strong>：系统每日自动生成并发送总结到群聊</li>
+                                <li style="margin-bottom: 4px;"><strong>个性化</strong>：每个群聊可配置独立的提示词文件</li>
+                                <li>所有总结结果都会直接发送到对应群聊中</li>
+                            </ul>
                         </div>
-                        
-
                     </div>
                 </div>
 
