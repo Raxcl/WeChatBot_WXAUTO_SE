@@ -1381,6 +1381,65 @@ def clear_chat_context(username):
             app.logger.error(f"处理 chat_contexts.json 失败: {e}")
             return jsonify({'status': 'error', 'message': '处理聊天上下文文件失败'}), 500
 
+@app.route('/trigger_single_group_summary', methods=['POST'])
+@login_required 
+def trigger_single_group_summary():
+    """触发单个群聊的总结生成"""
+    try:
+        data = request.get_json()
+        if not data or 'group_name' not in data:
+            return jsonify({'error': '缺少群聊名称参数'}), 400
+            
+        group_name = data['group_name'].strip()
+        if not group_name:
+            return jsonify({'error': '群聊名称不能为空'}), 400
+        
+        # 创建群聊总结请求文件，让bot程序处理
+        group_summary_requests_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'group_summary_requests.json')
+        group_summary_lock_file = group_summary_requests_file + '.lock'
+        
+        try:
+            with FileLock(group_summary_lock_file, timeout=5):
+                # 读取现有请求
+                requests_list = []
+                if os.path.exists(group_summary_requests_file):
+                    try:
+                        with open(group_summary_requests_file, 'r', encoding='utf-8') as f:
+                            requests_list = json.load(f)
+                    except (json.JSONDecodeError, IOError):
+                        requests_list = []
+                
+                # 检查是否已有相同的请求（避免重复）
+                existing_request = any(req.get('group_name') == group_name and req.get('status') == 'pending' 
+                                     for req in requests_list)
+                
+                if existing_request:
+                    return jsonify({'message': f'群聊 "{group_name}" 已有待处理的总结请求，请稍候...'})
+                
+                # 添加新请求
+                new_request = {
+                    'group_name': group_name,
+                    'status': 'pending',
+                    'created_at': time.time(),
+                    'request_id': f"{group_name}_{int(time.time())}"
+                }
+                requests_list.append(new_request)
+                
+                # 写入文件
+                with open(group_summary_requests_file, 'w', encoding='utf-8') as f:
+                    json.dump(requests_list, f, ensure_ascii=False, indent=2)
+                
+                app.logger.info(f"已创建群聊总结请求: {group_name}")
+                return jsonify({'message': f'群聊 "{group_name}" 的总结请求已提交，Bot程序将尽快处理'})
+                
+        except Exception as file_error:
+            app.logger.error(f"处理群聊总结请求文件时出错: {file_error}")
+            return jsonify({'error': '无法创建群聊总结请求，请稍后重试'}), 500
+            
+    except Exception as e:
+        app.logger.error(f"触发群聊总结失败: {e}")
+        return jsonify({'error': f'触发群聊总结失败: {str(e)}'}), 500
+
 def get_default_config():
     return {
         "LISTEN_LIST": [['微信名1', '角色1']],

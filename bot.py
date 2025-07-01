@@ -74,6 +74,14 @@ active_timers = {} # { (user_id, timer_id): Timer_object } (用于短期一次�
 timer_lock = threading.Lock()
 next_timer_id = 0
 
+# --- GROUP SUMMARY REQUEST GLOBALS ---
+GROUP_SUMMARY_REQUESTS_FILE = "group_summary_requests.json" # 存储群聊总结请求的文件名
+group_summary_requests_lock = threading.RLock() # 锁，用于处理群聊总结请求文件
+
+# --- PERMANENT CHAT ARCHIVE GLOBALS ---
+CHAT_ARCHIVE_DIR = "Chat_Archive" # 永久化聊天记录按日期存储的目录
+chat_archive_lock = threading.RLock() # 锁，用于保护按日期的聊天记录文件写入
+
 class AsyncHTTPHandler(logging.Handler):
     def __init__(self, url, retry_attempts=3, timeout=3, max_queue_size=1000, batch_size=20, batch_timeout=5):
         """
@@ -1013,11 +1021,21 @@ def message_listener(msg, chat):
     if not original_content:
         logger.info("消息内容为空，已忽略。")
         return
+    
+    # 永久化存档保存 - 在触发条件判断之前保存所有监听列表中的消息
+    is_group_chat = is_user_group_chat(who)
+    
+    # 保存到永久化存档
+    try:
+        # 对于群聊，使用发送者名字作为speaker；对于私聊，使用用户名
+        archive_speaker = sender if is_group_chat else who
+        log_to_permanent_archive(who, archive_speaker, original_content)
+        logger.info(f"永久化保存成功，该日志待删除")
+    except Exception as archive_err:
+        logger.error(f"保存消息到永久化存档失败: {archive_err}")
         
     should_process_this_message = False
-    content_for_handler = original_content 
-
-    is_group_chat = is_user_group_chat(who)
+    content_for_handler = original_content
 
     if not is_group_chat: 
         if who in user_names:
@@ -1263,6 +1281,13 @@ def fetch_and_extract_text(url: str) -> Optional[str]:
 # 辅助函数：将用户消息记录到记忆日志 (如果启用)
 def log_user_message_to_memory(username, original_content):
     """将用户的原始消息记录到记忆日志文件。"""
+    # 永久化存档始终保存，不依赖ENABLE_MEMORY配置
+    try:
+        log_to_permanent_archive(username, username, original_content)
+    except Exception as archive_err:
+        logger.error(f"保存用户消息到永久存档失败: {archive_err}")
+    
+    # Memory_Temp 目录的保存依赖ENABLE_MEMORY配置
     if ENABLE_MEMORY:
         try:
             prompt_name = prompt_mapping.get(username, username)
@@ -2023,87 +2048,194 @@ def summarize_and_save(user_id):
                 except Exception as e:
                     logger.error(f"清理临时文件失败: {str(e)}")
 
+def get_chat_messages_for_summary(user_id, hours):
+    """从永久化存档中获取指定时间范围内的聊天消息
+    
+    Args:
+        user_id: 用户/群聊ID
+        hours: 时间范围（小时）
+        
+    Returns:
+        list: 格式化的聊天消息列表
+    """
+    prompt_name = prompt_mapping.get(user_id, user_id)
+    now = datetime.now()
+    time_threshold = now - dt.timedelta(hours=hours)
+    
+    logger.info(f"群聊总结时间范围: {hours} 小时，截止时间: {time_threshold}")
+    
+    # 检查永久化存档目录
+    archive_dir = os.path.join(root_dir, CHAT_ARCHIVE_DIR)
+    if not os.path.exists(archive_dir):
+        raise FileNotFoundError(f"永久化存档目录不存在: {archive_dir}，请确保永久化日志系统正常运行")
+    
+    all_messages = []
+    
+    # 计算需要检查的日期范围
+    current_date = now.date()
+    days_to_check = max(1, int(hours / 24) + 2)  # 多检查2天确保完整性
+    
+    for i in range(days_to_check):
+        check_date = current_date - dt.timedelta(days=i)
+        archive_file = os.path.join(archive_dir, f'{user_id}_{prompt_name}_{check_date.strftime("%Y-%m-%d")}.txt')
+        
+        if os.path.exists(archive_file):
+            with open(archive_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+            
+            # 解析每行的时间戳并过滤
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith('[系统]'):
+                    continue
+                
+                # 解析时间戳：格式为 2025-01-22 Wednesday 14:30:25 | [发言者] 消息内容
+                if ' | ' in line:
+                    try:
+                        timestamp_str = line.split(' | ')[0]
+                        # 移除星期几部分
+                        timestamp_parts = timestamp_str.split()
+                        if len(timestamp_parts) >= 3:
+                            # 重构为：YYYY-MM-DD HH:MM:SS
+                            clean_timestamp = f"{timestamp_parts[0]} {timestamp_parts[-1]}"
+                            message_time = datetime.strptime(clean_timestamp, '%Y-%m-%d %H:%M:%S')
+                            
+                            # 检查是否在时间范围内
+                            if message_time >= time_threshold:
+                                all_messages.append((message_time, line))
+                    except (ValueError, IndexError):
+                        # 时间戳解析失败，但如果是今天的文件，仍然包含该消息
+                        if i == 0:
+                            all_messages.append((now, line))
+    
+    # 按时间排序并格式化
+    all_messages.sort(key=lambda x: x[0])
+    formatted_messages = [msg[1] for msg in all_messages]
+    
+    # 最终过滤
+    final_messages = []
+    for msg in formatted_messages:
+        if len(msg.strip()) > 0 and not msg.startswith('[系统]'):
+            final_messages.append(msg)
+    
+    logger.info(f"从永久化存档获取到 {len(final_messages)} 条有效消息，时间范围: {hours}小时")
+    return final_messages
+
 def process_group_summary(user_id):
-    """处理群聊总结请求"""
+    """处理群聊总结请求 - 优化版本，优先使用永久化存档，支持按时间范围和自定义提示词"""
     try:
-        # 发送开始处理的提示
-        wx.SendMsg(msg="收到群聊总结请求，正在分析聊天记录，请稍候...", who=user_id)
+        # 记录开始处理
+        logger.info(f"开始处理群聊 '{user_id}' 的总结请求，正在分析聊天记录...")
         
-        # 获取聊天记录 - 从持久化目录读取日志文件
-        prompt_name = prompt_mapping.get(user_id, user_id)  # 获取配置的prompt名
-        log_file = os.path.join(root_dir, MEMORY_TEMP_DIR, f'{user_id}_{prompt_name}_log.txt')
+        # 获取群聊的自定义配置
+        group_config = None
+        custom_prompt_file = None
         
-        if not os.path.exists(log_file):
-            wx.SendMsg(msg="抱歉，未找到该群聊的聊天记录文件，请稍后重试。", who=user_id)
-            logger.warning(f"日志文件不存在: {log_file}")
-            return
+        # 从SUMMARY_GROUP_LIST中查找群聊配置
+        for group_data in SUMMARY_GROUP_LIST:
+            if isinstance(group_data, dict):
+                if group_data.get('group') == user_id:
+                    group_config = group_data
+                    custom_prompt_file = group_data.get('prompt', '').strip()
+                    break
+            elif isinstance(group_data, str):
+                # 兼容旧格式（只有群聊名称）
+                if group_data == user_id:
+                    group_config = {'group': user_id, 'prompt': ''}
+                    break
         
-        if os.path.getsize(log_file) == 0:
-            wx.SendMsg(msg="抱歉，该群聊的聊天记录为空，无法生成总结。", who=user_id)
-            logger.info(f"空日志文件: {log_file}")
-            return
-        
-        # 读取日志文件
-        with open(log_file, 'r', encoding='utf-8') as f:
-            log_lines = [line.strip() for line in f if line.strip()]
-        
-        if not log_lines:
-            wx.SendMsg(msg="抱歉，没有找到足够的有效聊天记录进行总结。", who=user_id)
-            return
-        
-        # 格式化聊天记录（取最近100条，处理最近50条重要消息）
-        recent_logs = log_lines[-100:] if len(log_lines) > 100 else log_lines
-        formatted_messages = []
-        
-        for log_line in recent_logs[-50:]:  # 只处理最近50条
-            # 过滤掉过短或无意义的消息
-            if len(log_line.strip()) > 2 and not log_line.startswith('['):
-                formatted_messages.append(log_line)
+        # 获取聊天记录 - 优先从永久化存档读取，然后fallback到Memory_Temp
+        formatted_messages = get_chat_messages_for_summary(user_id, SUMMARY_TIME_HOURS)
         
         if not formatted_messages:
-            wx.SendMsg(msg="抱歉，没有找到足够的有效聊天记录进行总结。", who=user_id)
+            logger.warning(f"群聊总结跳过: 群聊 '{user_id}' 在过去{SUMMARY_TIME_HOURS}小时内没有找到任何聊天记录")
             return
         
-        # 构建总结提示词
+        logger.info(f"准备总结 {len(formatted_messages)} 条有效消息（来源：永久化存档+临时记录）")
+        
+        # 构建聊天记录内容
         chat_content = '\n'.join(formatted_messages)
-        summary_prompt = f"""请对以下群聊记录进行总结：
+        
+        # 选择使用的提示词
+        if custom_prompt_file:
+            # 使用自定义提示词文件
+            custom_prompt_path = os.path.join(root_dir, 'prompts', f'{custom_prompt_file}.md')
+            if os.path.exists(custom_prompt_path):
+                try:
+                    with open(custom_prompt_path, 'r', encoding='utf-8') as f:
+                        custom_prompt_content = f.read().strip()
+                    
+                    # 使用自定义提示词进行总结
+                    summary_prompt = f"""{custom_prompt_content}
+
+以下是过去{SUMMARY_TIME_HOURS}小时的群聊记录：
 
 {chat_content}
 
-请提供一个简洁的总结，包含：
+请根据上述角色设定，对这些聊天记录进行总结。"""
+                    
+                    logger.info(f"使用自定义提示词文件进行总结: {custom_prompt_file}")
+                except Exception as e:
+                    logger.error(f"读取自定义提示词文件失败: {e}")
+                    # fallback到默认提示词
+                    summary_prompt = build_default_summary_prompt(chat_content, SUMMARY_TIME_HOURS)
+            else:
+                logger.warning(f"自定义提示词文件不存在: {custom_prompt_path}")
+                # fallback到默认提示词
+                summary_prompt = build_default_summary_prompt(chat_content, SUMMARY_TIME_HOURS)
+        else:
+            # 使用默认总结提示词
+            summary_prompt = build_default_summary_prompt(chat_content, SUMMARY_TIME_HOURS)
+        
+        # 调用AI生成总结
+        summary = get_deepseek_response(summary_prompt, f"{user_id}_summary", store_context=False, is_summary=True)
+        
+        if summary:
+            # 在日志中显示总结结果
+            logger.info(f"=" * 80)
+            logger.info(f"📝 群聊总结 - {user_id}")
+            logger.info(f"时间范围: 过去{SUMMARY_TIME_HOURS}小时")
+            logger.info(f"消息数量: {len(formatted_messages)}条")
+            logger.info(f"自定义提示词: {custom_prompt_file if custom_prompt_file else '默认'}")
+            logger.info(f"-" * 80)
+            logger.info(summary)
+            logger.info(f"=" * 80)
+            
+            # 可选：将总结保存到文件
+            summary_file = os.path.join(root_dir, f"summary_{user_id}_{int(time.time())}.txt")
+            try:
+                with open(summary_file, 'w', encoding='utf-8') as f:
+                    f.write(f"群聊总结 - {user_id}\n")
+                    f.write(f"生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                    f.write(f"时间范围: 过去{SUMMARY_TIME_HOURS}小时\n")
+                    f.write(f"消息数量: {len(formatted_messages)}条\n")
+                    f.write(f"自定义提示词: {custom_prompt_file if custom_prompt_file else '默认'}\n")
+                    f.write(f"=" * 80 + "\n")
+                    f.write(summary)
+                logger.info(f"群聊总结已保存到文件: {summary_file}")
+            except Exception as save_error:
+                logger.warning(f"保存总结文件失败: {save_error}")
+            
+            logger.info(f"群聊总结生成完成 - '{user_id}'，使用了{len(formatted_messages)}条消息")
+        else:
+            logger.error(f"群聊总结生成失败 - '{user_id}'，AI返回空结果")
+            
+    except Exception as e:
+        logger.error(f"处理群聊总结时发生错误 - '{user_id}': {str(e)}", exc_info=True)
+
+def build_default_summary_prompt(chat_content, hours):
+    """构建默认的群聊总结提示词"""
+    return f"""请对以下过去{hours}小时的群聊记录进行总结：
+
+{chat_content}
+
+请提供一个简洁明了的总结，包含：
 1. 重要提醒和注意事项
-2. 热门话题和讨论要点  
+2. 热门话题和讨论要点
 3. 需要跟进的事项
 4. 其他值得关注的讨论
 
-总结应该简洁明了，突出重点内容。"""
-
-        # 调用AI生成总结
-        summary = get_deepseek_response(summary_prompt, user_id, store_context=False)
-        
-        if summary:
-            # 发送总结到群聊
-            # 如果总结过长，分段发送
-            if len(summary) > 800:
-                parts = [summary[i:i+800] for i in range(0, len(summary), 800)]
-                for i, part in enumerate(parts):
-                    wx.SendMsg(msg=f"📝 群聊总结 ({i+1}/{len(parts)}):\n\n{part}", who=user_id)
-                    if i < len(parts) - 1:
-                        time.sleep(1)  # 分段发送间隔
-            else:
-                wx.SendMsg(msg=f"📝 群聊总结:\n\n{summary}", who=user_id)
-            
-            logger.info(f"群聊总结已成功发送到群聊 '{user_id}'")
-        else:
-            wx.SendMsg(msg="抱歉，群聊总结生成失败，请稍后重试。", who=user_id)
-            logger.error(f"群聊总结生成失败，群聊 '{user_id}'")
-            
-    except Exception as e:
-        logger.error(f"处理群聊总结时发生错误: {str(e)}", exc_info=True)
-        try:
-            wx.SendMsg(msg="抱歉，处理群聊总结时发生错误，请稍后重试。", who=user_id)
-        except:
-            logger.error("发送错误消息失败")
+总结应该简洁明了，突出重点内容，便于群成员快速了解近期讨论的核心内容。"""
 
 def memory_manager():
     """记忆管理定时任务"""
@@ -2589,6 +2721,13 @@ def format_delay_approx(delay_seconds, target_dt):
 
 def log_original_message_to_memory(user_id, message_content):
     """将设置提醒的原始用户消息记录到记忆日志文件（如果启用了记忆功能）。"""
+    # 永久化存档始终保存，不依赖ENABLE_MEMORY配置
+    try:
+        log_to_permanent_archive(user_id, user_id, message_content)
+    except Exception as archive_err:
+        logger.error(f"保存提醒消息到永久存档失败: {archive_err}")
+    
+    # Memory_Temp 目录的保存依赖ENABLE_MEMORY配置
     if ENABLE_MEMORY: # 检查是否启用了记忆功能
         try:
             # 获取用户对应的 prompt 文件名（或用户昵称）
@@ -2698,10 +2837,19 @@ def trigger_reminder(user_id, timer_id, reminder_message):
 
 def log_ai_reply_to_memory(username, reply_part):
     """将 AI 的回复部分记录到用户的记忆日志文件中。"""
-    if not ENABLE_MEMORY:  # 双重检查是否意外调用
-         return
+    prompt_name = prompt_mapping.get(username, username)  # 使用配置的提示名作为 AI 身份
+    
+    # 永久化存档始终保存，不依赖ENABLE_MEMORY配置
     try:
-        prompt_name = prompt_mapping.get(username, username)  # 使用配置的提示名作为 AI 身份
+        log_to_permanent_archive(username, prompt_name, reply_part)
+    except Exception as archive_err:
+        logger.error(f"保存AI回复到永久存档失败: {archive_err}")
+    
+    # Memory_Temp 目录的保存依赖ENABLE_MEMORY配置
+    if not ENABLE_MEMORY:  # 如果禁用了记忆功能，只保存永久存档
+        return
+        
+    try:
         log_file = os.path.join(root_dir, MEMORY_TEMP_DIR, f'{username}_{prompt_name}_log.txt')
         log_entry = f"{datetime.now().strftime('%Y-%m-%d %A %H:%M:%S')} | [{prompt_name}] {reply_part}\n"
 
@@ -2712,6 +2860,39 @@ def log_ai_reply_to_memory(username, reply_part):
             f.write(log_entry)
     except Exception as log_err:
         logger.error(f"记录 AI 回复到记忆日志失败，用户 {username}: {log_err}")
+
+def log_to_permanent_archive(username, speaker, message_content):
+    """将聊天记录保存到按日期分类的永久化存档中。
+    
+    Args:
+        username: 用户ID/群聊名称
+        speaker: 发言者（用户名或AI角色名）
+        message_content: 消息内容
+    """
+    try:
+        with chat_archive_lock:
+            # 获取当前日期
+            current_date = datetime.now().strftime('%Y-%m-%d')
+            prompt_name = prompt_mapping.get(username, username)
+            
+            # 创建存档目录
+            archive_dir = os.path.join(root_dir, CHAT_ARCHIVE_DIR)
+            os.makedirs(archive_dir, exist_ok=True)
+            
+            # 按日期和用户分类的文件名
+            archive_file = os.path.join(archive_dir, f'{username}_{prompt_name}_{current_date}.txt')
+            
+            # 构建日志条目（包含完整时间戳）
+            timestamp = datetime.now().strftime('%Y-%m-%d %A %H:%M:%S')
+            log_entry = f"{timestamp} | [{speaker}] {message_content}\n"
+            
+            # 追加写入（按日期的文件会随时间增长）
+            with open(archive_file, 'a', encoding='utf-8') as f:
+                f.write(log_entry)
+            logger.info(f"永久化保存成功，日志文件：{archive_file}")
+                
+    except Exception as archive_err:
+        logger.error(f"保存到永久存档失败，用户 {username}: {archive_err}")
 
 def load_recurring_reminders():
     """从 JSON 文件加载重复和长期一次性提醒到内存中。"""
@@ -3045,6 +3226,88 @@ def get_online_model_response(query: str, user_id: str) -> Optional[str]:
         logger.error(f"调用在线 API 失败，用户: {user_id}: {e}", exc_info=True)
         return "抱歉，在线搜索功能暂时出错了。"
 
+def group_summary_request_processor():
+    """
+    定期检查并处理群聊总结请求
+    """
+    while True:
+        try:
+            group_summary_requests_file = os.path.join(root_dir, GROUP_SUMMARY_REQUESTS_FILE)
+            
+            if not os.path.exists(group_summary_requests_file):
+                time.sleep(10)  # 文件不存在时等待10秒再检查
+                continue
+            
+            with group_summary_requests_lock:
+                try:
+                    with open(group_summary_requests_file, 'r', encoding='utf-8') as f:
+                        requests_list = json.load(f)
+                except (json.JSONDecodeError, IOError) as e:
+                    logger.error(f"读取群聊总结请求文件失败: {e}")
+                    time.sleep(10)
+                    continue
+                
+                # 查找待处理的请求
+                pending_requests = [req for req in requests_list if req.get('status') == 'pending']
+                
+                if not pending_requests:
+                    time.sleep(10)  # 没有待处理请求时等待10秒再检查
+                    continue
+                
+                # 处理每个待处理的请求
+                for request in pending_requests:
+                    try:
+                        group_name = request.get('group_name')
+                        if not group_name:
+                            logger.warning(f"群聊总结请求缺少群聊名称: {request}")
+                            continue
+                        
+                        logger.info(f"开始处理群聊 '{group_name}' 的总结请求")
+                        
+                        # 调用现有的群聊总结处理函数
+                        process_group_summary(group_name)
+                        
+                        # 更新请求状态为已完成
+                        request['status'] = 'completed'
+                        request['processed_at'] = time.time()
+                        
+                        logger.info(f"群聊 '{group_name}' 的总结请求处理完成")
+                        
+                    except Exception as e:
+                        logger.error(f"处理群聊总结请求失败 {request}: {e}")
+                        # 标记为失败状态
+                        request['status'] = 'failed'
+                        request['error'] = str(e)
+                        request['failed_at'] = time.time()
+                
+                # 写回更新后的请求列表
+                try:
+                    with open(group_summary_requests_file, 'w', encoding='utf-8') as f:
+                        json.dump(requests_list, f, ensure_ascii=False, indent=2)
+                except IOError as e:
+                    logger.error(f"写入群聊总结请求文件失败: {e}")
+                
+                # 清理过期的已完成/失败请求 (超过24小时)
+                current_time = time.time()
+                original_count = len(requests_list)
+                requests_list = [req for req in requests_list 
+                               if req.get('status') == 'pending' or 
+                               (current_time - req.get('processed_at', 0) < 24 * 3600) or
+                               (current_time - req.get('failed_at', 0) < 24 * 3600)]
+                
+                # 如果有清理操作，重新写入文件
+                if len(requests_list) != original_count:
+                    try:
+                        with open(group_summary_requests_file, 'w', encoding='utf-8') as f:
+                            json.dump(requests_list, f, ensure_ascii=False, indent=2)
+                    except IOError as e:
+                        logger.error(f"清理群聊总结请求文件失败: {e}")
+                
+        except Exception as e:
+            logger.error(f"群聊总结请求处理循环出错: {e}")
+        
+        time.sleep(10)  # 每10秒检查一次
+
 def monitor_memory_usage():
     import psutil
     MEMORY_THRESHOLD = 328  # 内存使用阈值328MB
@@ -3329,6 +3592,11 @@ def main():
         else:
             logger.info("提醒功能已禁用 (所有类型提醒将无法使用)。")
 
+        if ENABLE_GROUP_SUMMARY:
+            logger.info("群聊总结功能已启用。")
+        else:
+            logger.info("群聊总结功能已禁用。")
+
         # --- 初始化 ---
         logger.info("\033[32m初始化微信接口和清理临时文件...\033[0m")
         clean_up_temp_files()
@@ -3403,6 +3671,13 @@ def main():
             reminder_checker_thread.daemon = True
             reminder_checker_thread.start()
             logger.info("提醒检查线程（重复和长期一次性）已启动。")
+
+        # 启动群聊总结请求处理线程
+        if ENABLE_GROUP_SUMMARY:
+            group_summary_processor_thread = threading.Thread(target=group_summary_request_processor, name="GroupSummaryProcessor")
+            group_summary_processor_thread.daemon = True
+            group_summary_processor_thread.start()
+            logger.info("群聊总结请求处理线程已启动。")
 
         # 自动消息
         if ENABLE_AUTO_MESSAGE:
