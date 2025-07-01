@@ -15,11 +15,11 @@
 LISTEN_LIST = [['测试群1', '角色1'], ['测试群2', '角色2']]
 
 # DeepSeek API 配置
-DEEPSEEK_API_KEY = ''
+DEEPSEEK_API_KEY = 'sk-wiyceuorksjphlaspgzgryeoqgosvdwhnvouobygewhcysfe'
 # 硅基流动API注册地址，免费15元额度 https://cloud.siliconflow.cn/
-DEEPSEEK_BASE_URL = 'https://vg.v1api.cc/v1'
+DEEPSEEK_BASE_URL = 'https://api.siliconflow.cn/v1/'
 # 硅基流动API的模型
-MODEL = 'deepseek-v3-0324'
+MODEL = 'deepseek-ai/DeepSeek-R1-0528-Qwen3-8B'
 # 用户和AI对话轮数
 MAX_GROUPS = 5
 
@@ -36,23 +36,23 @@ TEMPERATURE = 1.1
 # Moonshot AI配置（用于图片和表情包识别）
 # API申请https://platform.moonshot.cn/
 MOONSHOT_API_KEY = ''
-MOONSHOT_BASE_URL = 'https://vg.v1api.cc/v1'
-MOONSHOT_MODEL = 'gpt-4o'
+MOONSHOT_BASE_URL = ''
+MOONSHOT_MODEL = ''
 MOONSHOT_TEMPERATURE = 0.8
-ENABLE_IMAGE_RECOGNITION = True
-ENABLE_EMOJI_RECOGNITION = True
+ENABLE_IMAGE_RECOGNITION = False
+ENABLE_EMOJI_RECOGNITION = False
 
 # 消息队列等待时间
 QUEUE_WAITING_TIME = 7
 
 # 表情包存放目录
 EMOJI_DIR = 'emojis'
-ENABLE_EMOJI_SENDING = True
+ENABLE_EMOJI_SENDING = False
 EMOJI_SENDING_PROBABILITY = 25
 
 # 自动消息配置
 AUTO_MESSAGE = '请你模拟系统设置的角色，在微信上找对方继续刚刚的话题或者询问对方在做什么'
-ENABLE_AUTO_MESSAGE = True
+ENABLE_AUTO_MESSAGE = False
 # 等待时间
 MIN_COUNTDOWN_HOURS = 1.0
 MAX_COUNTDOWN_HOURS = 2.0
@@ -105,8 +105,8 @@ USE_VOICE_CALL_FOR_REMINDERS = False
 
 # 联网API配置
 ENABLE_ONLINE_API = False
-ONLINE_BASE_URL = 'https://vg.v1api.cc/v1'
-ONLINE_MODEL = 'net-gpt-4o-mini'
+ONLINE_BASE_URL = ''
+ONLINE_MODEL = ''
 ONLINE_API_KEY = ''
 ONLINE_API_TEMPERATURE = 0.7
 ONLINE_API_MAX_TOKEN = 2000
@@ -125,7 +125,7 @@ REQUESTS_USER_AGENT = 'Mozilla/5.0 (Linux; Android 10; SM-G975F) AppleWebKit/537
 MAX_WEB_CONTENT_LENGTH = 2000
 
 # 定时重启配置
-ENABLE_SCHEDULED_RESTART = True
+ENABLE_SCHEDULED_RESTART = False
 RESTART_INTERVAL_HOURS = 2.0
 RESTART_INACTIVITY_MINUTES = 15
 
@@ -143,7 +143,7 @@ USE_ASSISTANT_FOR_MEMORY_SUMMARY = False
 
 # 敏感词处理配置
 # 开启后遇到敏感词时自动清除Memory_Temp文件和聊天上下文
-ENABLE_SENSITIVE_CONTENT_CLEARING = True
+ENABLE_SENSITIVE_CONTENT_CLEARING = False
 
 # === 群聊总结功能配置 ===
 # 是否启用群聊总结功能
