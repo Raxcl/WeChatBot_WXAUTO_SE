@@ -41,9 +41,12 @@ WxParam.FORCE_MESSAGE_XBIAS = True
 from database import db_manager, init_database, close_database
 from database import UserChatMessage, GroupChatMessage, GroupSummary
 
-# 生成用户昵称列表和prompt映射字典
+# 生成用户昵称列表和prompt映射字典  
 user_names = [entry[0] for entry in LISTEN_LIST]
 prompt_mapping = {entry[0]: entry[1] for entry in LISTEN_LIST}
+
+# 全局路由器将在main函数中初始化，避免循环导入
+global_router = None
 
 # 群聊信息缓存
 group_chat_cache = {}  # {user_name: is_group_chat}
@@ -3785,6 +3788,25 @@ def main():
         # 确保临时目录存在
         memory_temp_dir = os.path.join(root_dir, MEMORY_TEMP_DIR)
         os.makedirs(memory_temp_dir, exist_ok=True)
+
+        # 初始化AI平台路由器
+        global global_router
+        logger.info("正在初始化AI平台路由器...")
+        try:
+            from ai_platforms.manager import parse_listen_list, init_global_router
+            
+            # 解析用户平台映射
+            user_platform_mapping = parse_listen_list(LISTEN_LIST)
+            
+            # 初始化全局路由器
+            global_router = init_global_router(LISTEN_LIST)
+            
+            logger.info(f"AI平台路由初始化成功，支持 {len(user_platform_mapping)} 个用户")
+            
+        except Exception as e:
+            logger.error(f"AI平台路由初始化失败: {e}")
+            logger.warning("将使用默认的大模型直连模式")
+            global_router = None
 
         # 加载聊天上下文
         logger.info("正在加载聊天上下文...")

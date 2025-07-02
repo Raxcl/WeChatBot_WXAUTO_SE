@@ -90,10 +90,12 @@ class LLMDirectPlatform(BasePlatform):
         """
         try:
             # 延迟导入避免循环依赖
-            from bot import (
-                chat_contexts, queue_lock, get_user_prompt,
-                load_chat_contexts, save_chat_contexts
-            )
+            import bot
+            chat_contexts = bot.chat_contexts
+            queue_lock = bot.queue_lock
+            get_user_prompt = bot.get_user_prompt
+            load_chat_contexts = bot.load_chat_contexts
+            save_chat_contexts = bot.save_chat_contexts
             
             # 重新加载聊天上下文
             load_chat_contexts()
@@ -113,7 +115,9 @@ class LLMDirectPlatform(BasePlatform):
                     messages_to_send.append({"role": "system", "content": "你是一个乐于助人的助手。"})
                 
                 # 延迟导入避免循环依赖
-                from bot import chat_contexts, queue_lock
+                import bot
+                chat_contexts = bot.chat_contexts
+                queue_lock = bot.queue_lock
                 
                 # 管理并检索聊天历史记录
                 with queue_lock:
@@ -150,7 +154,9 @@ class LLMDirectPlatform(BasePlatform):
             
             # 如果需要，存储助手回复到上下文中
             if store_context:
-                from bot import chat_contexts, queue_lock
+                import bot
+                chat_contexts = bot.chat_contexts
+                queue_lock = bot.queue_lock
                 
                 with queue_lock:
                     if user_id not in chat_contexts:
@@ -282,10 +288,12 @@ def get_deepseek_response(message, user_id, store_context=True, is_summary=False
     """
     try:
         # 延迟导入避免循环依赖
-        from bot import (
-            chat_contexts, queue_lock, get_user_prompt,
-            load_chat_contexts, save_chat_contexts
-        )
+        import bot
+        chat_contexts = bot.chat_contexts
+        queue_lock = bot.queue_lock
+        get_user_prompt = bot.get_user_prompt
+        load_chat_contexts = bot.load_chat_contexts
+        save_chat_contexts = bot.save_chat_contexts
         
         # 每次调用都重新加载聊天上下文，以应对文件被外部修改的情况
         load_chat_contexts()
@@ -388,7 +396,8 @@ def call_chat_api_with_retry(messages_to_send, user_id, max_retries=2, is_summar
             logger.debug(f"发送给 API 的消息 (ID: {user_id}): {messages_to_send}")
 
             # 延迟导入避免循环依赖
-            from bot import client
+            import bot
+            client = bot.client
             
             response = client.chat.completions.create(
                 model=MODEL,
@@ -441,7 +450,9 @@ def call_chat_api_with_retry(messages_to_send, user_id, max_retries=2, is_summar
                 if ENABLE_SENSITIVE_CONTENT_CLEARING:
                     logger.warning(f"已开启敏感词自动清除上下文功能，开始清除用户 {user_id} 的聊天上下文")
                     # 延迟导入避免循环依赖
-                    from bot import clear_chat_context, clear_memory_temp_files
+                    import bot
+                    clear_chat_context = bot.clear_chat_context
+                    clear_memory_temp_files = bot.clear_memory_temp_files
                     clear_chat_context(user_id)
                     if is_summary:
                         clear_memory_temp_files(user_id)  # 如果是总结任务，清除临时文件
