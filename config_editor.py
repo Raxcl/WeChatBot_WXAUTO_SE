@@ -301,20 +301,29 @@ def submit_config():
             return jsonify({'error': '空的表单提交'}), 400
         
         current_config_before_update = parse_config()
-        old_listen_list_map = {item[0]: item[1] for item in current_config_before_update.get('LISTEN_LIST', [])}
+        old_listen_list_map = {item[0]: (item[1], item[2] if len(item) > 2 else 'llm_direct') for item in current_config_before_update.get('LISTEN_LIST', [])}
 
         new_values_for_config_py = {}
 
         nicknames_from_form = request.form.getlist('nickname')
         prompt_files_from_form = request.form.getlist('prompt_file')
+        ai_platforms_from_form = request.form.getlist('ai_platform')
         
         processed_listen_list = []
         if nicknames_from_form and prompt_files_from_form and len(nicknames_from_form) == len(prompt_files_from_form):
-            for nick, pf in zip(nicknames_from_form, prompt_files_from_form):
+                
+            for nick, pf, ap in zip(nicknames_from_form, prompt_files_from_form, ai_platforms_from_form):
                 nick_stripped = nick.strip()
                 pf_stripped = pf.strip()
+                ap_stripped = ap.strip() if ap else 'llm_direct'
+                
+                # 验证平台是否有效
+                valid_platforms = ['llm_direct', 'coze', 'dify']
+                if ap_stripped not in valid_platforms:
+                    app.logger.warning(f"用户 {nick_stripped} 选择了无效的AI平台 '{ap}'")
+                
                 if nick_stripped and pf_stripped: 
-                    processed_listen_list.append([nick_stripped, pf_stripped])
+                    processed_listen_list.append([nick_stripped, pf_stripped, ap_stripped])
         new_values_for_config_py['LISTEN_LIST'] = processed_listen_list
         
         # 处理群聊总结的群聊列表
@@ -339,12 +348,14 @@ def submit_config():
         new_values_for_config_py['SUMMARY_TIME_RANGE'] = summary_time_range
         app.logger.info(f"保存群聊总结时间范围: {summary_time_range}")
         
-        new_listen_list_map = {item[0]: item[1] for item in processed_listen_list}
+        new_listen_list_map = {item[0]: (item[1], item[2]) for item in processed_listen_list}
         
         users_whose_prompt_changed = []
-        for nickname, new_prompt in new_listen_list_map.items():
-            if nickname in old_listen_list_map and old_listen_list_map[nickname] != new_prompt:
-                users_whose_prompt_changed.append(nickname)
+        for nickname, (new_prompt, new_platform) in new_listen_list_map.items():
+            if nickname in old_listen_list_map:
+                old_prompt, old_platform = old_listen_list_map[nickname]
+                if old_prompt != new_prompt or old_platform != new_platform:
+                    users_whose_prompt_changed.append(nickname)
 
         boolean_fields = [
             'ENABLE_IMAGE_RECOGNITION', 'ENABLE_EMOJI_RECOGNITION',
@@ -361,7 +372,7 @@ def submit_config():
             new_values_for_config_py[field] = field in request.form
 
         for key_from_form in request.form:
-            if key_from_form in ['nickname', 'prompt_file', 'group_name', 'group_prompt'] or key_from_form in boolean_fields:
+            if key_from_form in ['nickname', 'prompt_file', 'ai_platform', 'group_name', 'group_prompt'] or key_from_form in boolean_fields:
                 continue
 
             value_from_form = request.form[key_from_form].strip()
@@ -1044,6 +1055,8 @@ def generate_prompt():
             api_key=DEEPSEEK_API_KEY
         )
         
+        if not request.json:
+            return jsonify({'error': '缺少请求数据'}), 400
         prompt = request.json.get('prompt', '')
         FixedPrompt = (
             "\n请严格按照以下格式生成提示词（仅参考以下格式，将...替换为合适的内容，不要输出其他多余内容）。"
@@ -1459,7 +1472,7 @@ def trigger_single_group_summary():
 
 def get_default_config():
     return {
-        "LISTEN_LIST": [['微信名1', '角色1']],
+        "LISTEN_LIST": [['微信名1', '角色1', 'llm_direct']],
         "DEEPSEEK_API_KEY": '',
         "DEEPSEEK_BASE_URL": 'https://vg.v1api.cc/v1',
         "MODEL": 'deepseek-v3-0324',

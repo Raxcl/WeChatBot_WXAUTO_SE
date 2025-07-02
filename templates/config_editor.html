@@ -1181,6 +1181,12 @@
                         <option value="{{ file }}">{{ file }}</option>
                         {% endfor %}
                     </select>
+                    <select name="ai_platform" required>
+                        <option value="">-- 选择AI平台 --</option>
+                        <option value="llm_direct" selected>大模型直连</option>
+                        <option value="coze">Coze平台</option>
+                        <option value="dify">Dify平台</option>
+                    </select>
                     <button type="button" onclick="removeEntry(this)">删除</button>
                 `;
                 container.appendChild(div);
@@ -2361,7 +2367,7 @@
                 <div id="section-user-list" class="content-panel">
                     <h2>用户列表</h2>
                     <div class="form-group">
-                        <label>微信昵称/备注与对应Prompt配置:</label>
+                        <label>微信昵称/备注与对应Prompt和AI平台配置:</label>
                         <div id="listen-list">
                             {% for item in config.LISTEN_LIST %}
                             <div class="entry">
@@ -2369,8 +2375,14 @@
                                 <select name="prompt_file" required>
                                     <option value="">-- 选择Prompt文件 --</option>
                                     {% for file in prompt_files %}
-                                    <option value="{{ file }}" {% if item[1] == file %}selected{% endif %}>{{ file }}</option>
+                                    <option value="{{ file }}" {% if (item|length > 1 and item[1] == file) %}selected{% endif %}>{{ file }}</option>
                                     {% endfor %}
+                                </select>
+                                <select name="ai_platform" required>
+                                    <option value="">-- 选择AI平台 --</option>
+                                    <option value="llm_direct" {% if (item|length > 2 and item[2] == 'llm_direct') or (item|length == 2) %}selected{% endif %}>大模型直连</option>
+                                    <option value="coze" {% if (item|length > 2 and item[2] == 'coze') %}selected{% endif %}>Coze平台</option>
+                                    <option value="dify" {% if (item|length > 2 and item[2] == 'dify') %}selected{% endif %}>Dify平台</option>
                                 </select>
                                 <button type="button" onclick="removeEntry(this)">删除</button>
                             </div>
@@ -2378,7 +2390,7 @@
                         </div>
                         <button type="button" onclick="addEntry()" style="margin-top:10px;">添加用户</button>
                     </div>
-                    <small>提示：修改了用户对应的Prompt文件后保存配置时将自动清除该用户的上下文记忆。</small>
+                    <small>提示：修改了用户对应的Prompt文件或AI平台后保存配置时将自动清除该用户的上下文记忆。新建用户默认使用"大模型直连"平台。</small>
                 </div>
 
                 <div id="section-prompt-management" class="content-panel">
