@@ -2304,26 +2304,21 @@ def process_group_summary(user_id):
     """处理群聊总结请求"""
     import config
     try:
-        # 获取群聊对应的角色名称（从prompt_mapping）
-        prompt_name = prompt_mapping.get(user_id, user_id)
-        logger.info(f"群聊 '{user_id}' 使用角色: {prompt_name}")
+        # 获取群聊对应的总结角色名称（优先从SUMMARY_GROUP_LIST获取）
+        prompt_name = None
         
-        # 查找是否有特定群聊的总结配置
-        group_config = None
-        custom_prompt_file = None
+        # 首先检查SUMMARY_GROUP_LIST中是否有专门的总结角色配置
+        if hasattr(config, 'SUMMARY_GROUP_LIST') and config.SUMMARY_GROUP_LIST:
+            for group_data in config.SUMMARY_GROUP_LIST:
+                if isinstance(group_data, dict) and group_data.get('group') == user_id:
+                    prompt_name = group_data.get('prompt')
+                    logger.info(f"群聊 '{user_id}' 使用专门的总结角色: {prompt_name}")
+                    break
         
-        # 读取群聊配置（用于总结的特殊提示词，不影响角色名称）
-        try:
-            with open(os.path.join(root_dir, 'group_summary_config.json'), 'r', encoding='utf-8') as f:
-                groups_config = json.load(f)
-                for group_data in groups_config:
-                    if group_data.get('group_name') == user_id:
-                        group_config = group_data
-                        custom_prompt_file = group_data.get('prompt', '').strip()
-                        logger.info(f"找到群聊 '{user_id}' 的总结配置，提示词: {custom_prompt_file}")
-                        break
-        except (FileNotFoundError, json.JSONDecodeError):
-            logger.warning("群聊配置文件不存在或格式错误，使用默认配置")
+        # 如果没有专门的总结角色，报错
+        if not prompt_name:
+            logger.error(f"群聊 '{user_id}' 没有找到总结角色配置")
+            return
         
         # 使用配置的默认时间范围
         time_range = getattr(config, 'SUMMARY_TIME_RANGE', 'yesterday')
@@ -2358,35 +2353,30 @@ def process_group_summary(user_id):
         # 构建聊天记录内容
         chat_content = '\n'.join(formatted_messages)
         
-        # 选择使用的提示词
-        if custom_prompt_file:
-            # 使用自定义提示词文件
-            custom_prompt_path = os.path.join(root_dir, 'prompts', f'{custom_prompt_file}.md')
-            if os.path.exists(custom_prompt_path):
-                try:
-                    with open(custom_prompt_path, 'r', encoding='utf-8') as f:
-                        custom_prompt_content = f.read().strip()
-                    
-                    # 使用自定义提示词进行总结
-                    summary_prompt = f"""{custom_prompt_content}
+        # 选择使用的提示词（直接使用配置的角色名称）
+        prompt_path = os.path.join(root_dir, 'prompts', f'{prompt_name}.md')
+        if os.path.exists(prompt_path):
+            try:
+                with open(prompt_path, 'r', encoding='utf-8') as f:
+                    prompt_content = f.read().strip()
+                
+                # 使用配置的角色提示词进行总结
+                summary_prompt = f"""{prompt_content}
 
 以下是{time_description}的群聊记录：
 
 {chat_content}
 
 请根据上述角色设定，对这些聊天记录进行总结。"""
-                    
-                    logger.info(f"使用自定义提示词文件进行总结: {custom_prompt_file}")
-                except Exception as e:
-                    logger.error(f"读取自定义提示词文件失败: {e}")
-                    # fallback到默认提示词
-                    summary_prompt = build_default_summary_prompt(chat_content, time_description)
-            else:
-                logger.warning(f"自定义提示词文件不存在: {custom_prompt_path}")
+                
+                logger.info(f"使用角色提示词文件进行总结: {prompt_name}")
+            except Exception as e:
+                logger.error(f"读取角色提示词文件失败: {e}")
                 # fallback到默认提示词
                 summary_prompt = build_default_summary_prompt(chat_content, time_description)
         else:
-            # 使用默认总结提示词
+            logger.warning(f"角色提示词文件不存在: {prompt_path}")
+            # fallback到默认提示词
             summary_prompt = build_default_summary_prompt(chat_content, time_description)
         
         # 调用AI生成总结
@@ -2399,7 +2389,7 @@ def process_group_summary(user_id):
                 summary_header = f"📝 群聊总结报告\n" \
                                 f"⏰ 时间范围: {time_description}\n" \
                                 f"📊 消息数量: {len(formatted_messages)}条\n" \
-                                f"{'🎭 使用提示词: ' + custom_prompt_file if custom_prompt_file else '📋 默认总结逻辑'}\n" \
+                                f"🎭 使用角色: {prompt_name}\n" \
                                 f"{'=' * 30}\n\n"
                 
                 # 完整的总结消息

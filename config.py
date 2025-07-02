@@ -149,8 +149,8 @@ ENABLE_SENSITIVE_CONTENT_CLEARING = False
 # 是否启用群聊总结功能
 ENABLE_GROUP_SUMMARY = True
 
-# 支持总结的群聊列表
-SUMMARY_GROUP_LIST = ['测试群1', '测试群2']
+# 支持总结的群聊列表 (每个群聊可以配置专门的总结角色)
+SUMMARY_GROUP_LIST = [{'group': '测试群1', 'prompt': '群聊总结官'}, {'group': '测试群2', 'prompt': '高冷群聊总结助手'}]
 
 # 每日总结执行时间（24小时制，格式：HH:MM）
 SUMMARY_TIME = '19:46'
