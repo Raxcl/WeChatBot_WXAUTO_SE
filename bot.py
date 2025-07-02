@@ -39,7 +39,7 @@ WxParam.FORCE_MESSAGE_XBIAS = True
 
 # 数据库相关导入
 from database import db_manager, init_database, close_database
-from models import UserChatMessage, GroupChatMessage, GroupSummary
+from database import UserChatMessage, GroupChatMessage, GroupSummary
 
 # 生成用户昵称列表和prompt映射字典
 user_names = [entry[0] for entry in LISTEN_LIST]
