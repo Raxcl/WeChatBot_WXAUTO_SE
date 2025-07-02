@@ -1055,8 +1055,10 @@ def generate_prompt():
             api_key=DEEPSEEK_API_KEY
         )
         
+        # 检查请求是否包含JSON数据
         if not request.json:
-            return jsonify({'error': '缺少请求数据'}), 400
+            return jsonify({'error': '请求必须包含JSON数据'}), 400
+            
         prompt = request.json.get('prompt', '')
         FixedPrompt = (
             "\n请严格按照以下格式生成提示词（仅参考以下格式，将...替换为合适的内容，不要输出其他多余内容）。"
@@ -1092,7 +1094,7 @@ def generate_prompt():
         )
         
         reply = completion.choices[0].message.content
-        if "</think>" in reply:
+        if reply and "</think>" in reply:
             reply = reply.split("</think>", 1)[1].strip()
 
         return jsonify({
@@ -1231,7 +1233,7 @@ def import_config():
             return jsonify({'error': '未找到上传的配置文件'}), 400
             
         config_file = request.files['config_file']
-        if not config_file.filename.endswith('.py'):
+        if not config_file.filename or not config_file.filename.endswith('.py'):
             return jsonify({'error': '请上传.py格式的配置文件'}), 400
             
         # 创建临时文件用于解析配置
@@ -1354,6 +1356,10 @@ def receive_bot_log():
         # 增加Content-Type检查
         if not request.is_json:
             return jsonify({'error': 'Unsupported Media Type'}), 415
+
+        # 检查请求是否包含JSON数据
+        if not request.json:
+            return jsonify({'error': '请求必须包含JSON数据'}), 400
 
         # 支持两种格式：单个日志或日志数组
         if 'logs' in request.json:  # 批量日志
