@@ -97,14 +97,15 @@ class PlatformRouter:
         logger.debug(f"Selected platform {platform.get_platform_name()} for user {user_id}")
         return platform
     
-    def route_message(self, user_id: str, message: str, **kwargs) -> str:
+    def route_message(self, user_id: str, message: str, store_context: bool = True, is_summary: bool = False) -> str:
         """
         路由消息到对应平台
         
         Args:
             user_id (str): 用户ID
             message (str): 用户消息
-            **kwargs: 其他参数，如store_context, is_summary等
+            store_context (bool): 是否存储上下文，默认True
+            is_summary (bool): 是否为总结任务，默认False
         
         Returns:
             str: AI回复
@@ -115,10 +116,12 @@ class PlatformRouter:
         
         try:
             logger.debug(f"Routing message from {user_id} to {platform.get_platform_name()}")
-            return platform.get_response(message, user_id, **kwargs)
+            response = platform.get_response(message, user_id, store_context=store_context, is_summary=is_summary)
+            return response if response else "抱歉，未能获取到有效回复。"
         except Exception as e:
             logger.error(f"Error routing message for user {user_id}: {e}")
-            return platform.handle_error(e, user_id)
+            error_response = platform.handle_error(e, user_id)
+            return error_response if error_response else "抱歉，处理您的请求时发生错误。"
     
     def get_user_config(self, user_id: str) -> Dict[str, str]:
         """

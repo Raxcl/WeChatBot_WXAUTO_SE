@@ -296,7 +296,10 @@ class AsyncHTTPHandler(logging.Handler):
             logging.info(f"关闭日志处理器，还有 {self.log_queue.qsize()} 条日志待处理")
             try:
                 # 尝试最多等待30秒处理剩余日志
-                self.log_queue.join(timeout=30)
+                import time
+                start_time = time.time()
+                while not self.log_queue.empty() and time.time() - start_time < 30:
+                    time.sleep(0.1)
             except:
                 pass
         
@@ -602,92 +605,6 @@ def save_chat_contexts():
             except OSError:
                 pass # 忽略清理错误
 
-def get_deepseek_response(message, user_id, store_context=True, is_summary=False):
-    """
-    从 DeepSeek API 获取响应，确保正确的上下文处理，并持久化上下文。
-
-    参数:
-        message (str): 用户的消息或系统提示词（用于工具调用）。
-        user_id (str): 用户或系统组件的标识符。
-        store_context (bool): 是否将此交互存储到聊天上下文中。
-                              对于工具调用（如解析或总结），设置为 False。
-    """
-    try:
-        # 每次调用都重新加载聊天上下文，以应对文件被外部修改的情况
-        load_chat_contexts()
-        
-        logger.info(f"调用 Chat API - ID: {user_id}, 是否存储上下文: {store_context}, 消息: {message[:100]}...") # 日志记录消息片段
-
-        messages_to_send = []
-        context_limit = MAX_GROUPS * 2  # 最大消息总数（不包括系统消息）
-
-        if store_context:
-            # --- 处理需要上下文的常规聊天消息 ---
-            # 1. 获取该用户的系统提示词
-            try:
-                user_prompt = get_user_prompt(user_id)
-                messages_to_send.append({"role": "system", "content": user_prompt})
-            except FileNotFoundError as e:
-                logger.error(f"用户 {user_id} 的提示文件错误: {e}，使用默认提示。")
-                messages_to_send.append({"role": "system", "content": "你是一个乐于助人的助手。"})
-
-            # 2. 管理并检索聊天历史记录
-            with queue_lock: # 确保对 chat_contexts 的访问是线程安全的
-                if user_id not in chat_contexts:
-                    chat_contexts[user_id] = []
-
-                # 在添加当前消息之前获取现有历史记录
-                history = list(chat_contexts.get(user_id, []))  # 获取副本
-
-                # 如果历史记录超过限制，则进行裁剪
-                if len(history) > context_limit:
-                    history = history[-context_limit:]  # 保留最近的消息
-
-                # 将历史消息添加到 API 请求列表中
-                messages_to_send.extend(history)
-
-                # 3. 将当前用户消息添加到 API 请求列表中
-                messages_to_send.append({"role": "user", "content": message})
-
-                # 4. 在准备 API 调用后更新持久上下文
-                # 将用户消息添加到持久存储中
-                chat_contexts[user_id].append({"role": "user", "content": message})
-                # 如果需要，裁剪持久存储（在助手回复后会再次裁剪）
-                if len(chat_contexts[user_id]) > context_limit + 1:  # +1 因为刚刚添加了用户消息
-                    chat_contexts[user_id] = chat_contexts[user_id][-(context_limit + 1):]
-                
-                # 保存上下文到文件
-                save_chat_contexts() # 在用户消息添加后保存一次
-
-        else:
-            # --- 处理工具调用（如提醒解析、总结） ---
-            messages_to_send.append({"role": "user", "content": message})
-            logger.info(f"工具调用 (store_context=False)，ID: {user_id}。仅发送提供的消息。")
-
-        # --- 调用 API ---
-        reply = call_chat_api_with_retry(messages_to_send, user_id, is_summary=is_summary)
-
-        # --- 如果需要，存储助手回复到上下文中 ---
-        if store_context:
-            with queue_lock: # 再次获取锁来更新和保存
-                if user_id not in chat_contexts:
-                   chat_contexts[user_id] = []  # 安全初始化 (理论上此时应已存在)
-
-                chat_contexts[user_id].append({"role": "assistant", "content": reply})
-
-                if len(chat_contexts[user_id]) > context_limit:
-                    chat_contexts[user_id] = chat_contexts[user_id][-context_limit:]
-                
-                # 保存上下文到文件
-                save_chat_contexts() # 在助手回复添加后再次保存
-        
-        return reply
-
-    except Exception as e:
-        logger.error(f"Chat 调用失败 (ID: {user_id}): {str(e)}", exc_info=True)
-        return "抱歉，我现在有点忙，稍后再聊吧。"
-
-
 def strip_before_thought_tags(text):
     # 匹配并截取 </thought> 或 </think> 后面的内容
     match = re.search(r'(?:</thought>|</think>)([\s\S]*)', text)
@@ -695,82 +612,6 @@ def strip_before_thought_tags(text):
         return match.group(1)
     else:
         return text
-
-def call_chat_api_with_retry(messages_to_send, user_id, max_retries=2, is_summary=False):
-    """
-    调用 Chat API 并在第一次失败或返回空结果时重试。
-
-    参数:
-        messages_to_send (list): 要发送给 API 的消息列表。
-        user_id (str): 用户或系统组件的标识符。
-        max_retries (int): 最大重试次数。
-
-    返回:
-        str: API 返回的文本回复。
-    """
-    attempt = 0
-    while attempt <= max_retries:
-        try:
-            logger.debug(f"发送给 API 的消息 (ID: {user_id}): {messages_to_send}")
-
-            response = client.chat.completions.create(
-                model=MODEL,
-                messages=messages_to_send,
-                temperature=TEMPERATURE,
-                max_tokens=MAX_TOKEN,
-                stream=False
-            )
-
-            if response.choices:
-                content = response.choices[0].message.content.strip()
-                if content and "[image]" not in content:
-                    filtered_content = strip_before_thought_tags(content)
-                    if filtered_content:
-                        return filtered_content
-
-
-            # 记录错误日志
-            logger.error(f"错误请求消息体: {MODEL}")
-            logger.error(json.dumps(messages_to_send, ensure_ascii=False, indent=2))
-            logger.error(f"\033[31m错误：API 返回了空的选择项或内容为空。模型名:{MODEL}\033[0m")
-            logger.error(f"完整响应对象: {response}")
-
-        except Exception as e:
-            logger.error(f"错误请求消息体: {MODEL}")
-            logger.error(json.dumps(messages_to_send, ensure_ascii=False, indent=2))
-            error_info = str(e)
-            logger.error(f"自动重试：第 {attempt + 1} 次调用 {MODEL}失败 (ID: {user_id}) 原因: {error_info}", exc_info=False)
-
-            # 细化错误分类
-            if "real name verification" in error_info:
-                logger.error("\033[31m错误：API 服务商反馈请完成实名认证后再使用！\033[0m")
-                break  # 终止循环，不再重试
-            elif "rate limit" in error_info:
-                logger.error("\033[31m错误：API 服务商反馈当前访问 API 服务频次达到上限，请稍后再试！\033[0m")
-            elif "payment required" in error_info:
-                logger.error("\033[31m错误：API 服务商反馈您正在使用付费模型，请先充值再使用或使用免费额度模型！\033[0m")
-                break  # 终止循环，不再重试
-            elif "user quota" in error_info or "is not enough" in error_info or "UnlimitedQuota" in error_info:
-                logger.error("\033[31m错误：API 服务商反馈，你的余额不足，请先充值再使用! 如有余额，请检查令牌是否为无限额度。\033[0m")
-                break  # 终止循环，不再重试
-            elif "Api key is invalid" in error_info:
-                logger.error("\033[31m错误：API 服务商反馈 API KEY 不可用，请检查配置选项！\033[0m")
-            elif "service unavailable" in error_info:
-                logger.error("\033[31m错误：API 服务商反馈服务器繁忙，请稍后再试！\033[0m")
-            elif "sensitive words detected" in error_info:
-                logger.error("\033[31m错误：Prompt或消息中含有敏感词，无法生成回复，请联系API服务商！\033[0m")
-                if ENABLE_SENSITIVE_CONTENT_CLEARING:
-                    logger.warning(f"已开启敏感词自动清除上下文功能，开始清除用户 {user_id} 的聊天上下文")
-                    clear_chat_context(user_id)
-                    if is_summary:
-                        clear_memory_temp_files(user_id)  # 如果是总结任务，清除临时文件
-                break  # 终止循环，不再重试
-            else:
-                logger.error("\033[31m未知错误：" + error_info + "\033[0m")
-
-        attempt += 1
-
-    raise RuntimeError("抱歉，我现在有点忙，稍后再聊吧。")
 
 def get_assistant_response(message, user_id, is_summary=False):
     """
@@ -787,6 +628,7 @@ def get_assistant_response(message, user_id, is_summary=False):
     if not assistant_client:
         logger.warning(f"辅助模型客户端未初始化，回退使用主模型。用户ID: {user_id}")
         # 回退到主模型
+        from ai_platforms.llm_direct import get_deepseek_response
         return get_deepseek_response(message, user_id, store_context=False, is_summary=is_summary)
     
     try:
@@ -803,6 +645,7 @@ def get_assistant_response(message, user_id, is_summary=False):
         logger.error(f"辅助模型调用失败 (ID: {user_id}): {str(e)}", exc_info=True)
         logger.warning(f"辅助模型调用失败，回退使用主模型。用户ID: {user_id}")
         # 回退到主模型
+        from ai_platforms.llm_direct import get_deepseek_response
         return get_deepseek_response(message, user_id, store_context=False, is_summary=is_summary)
 
 def call_assistant_api_with_retry(messages_to_send, user_id, max_retries=2, is_summary=False):
@@ -822,6 +665,10 @@ def call_assistant_api_with_retry(messages_to_send, user_id, max_retries=2, is_s
         try:
             logger.debug(f"发送给辅助模型 API 的消息 (ID: {user_id}): {messages_to_send}")
 
+            if assistant_client is None:
+                logger.error("辅助模型客户端未初始化")
+                raise RuntimeError("辅助模型客户端未初始化")
+                
             response = assistant_client.chat.completions.create(
                 model=ASSISTANT_MODEL,
                 messages=messages_to_send,
@@ -831,11 +678,13 @@ def call_assistant_api_with_retry(messages_to_send, user_id, max_retries=2, is_s
             )
 
             if response.choices:
-                content = response.choices[0].message.content.strip()
-                if content and "[image]" not in content:
-                    filtered_content = strip_before_thought_tags(content)
-                    if filtered_content:
-                        return filtered_content
+                content = response.choices[0].message.content
+                if content:
+                    content = content.strip()
+                    if content and "[image]" not in content:
+                        filtered_content = strip_before_thought_tags(content)
+                        if filtered_content:
+                            return filtered_content
 
             # 记录错误日志
             logger.error("辅助模型错误请求消息体:")
@@ -1543,6 +1392,7 @@ def process_user_messages(user_id):
 请结合你的角色设定，以自然的方式回答用户的原始问题。请直接给出回答内容，不要提及你是联网搜索的。
 """
                     # 调用主 AI 生成最终回复，存储上下文
+                    from ai_platforms.llm_direct import get_deepseek_response
                     reply = get_deepseek_response(final_prompt, user_id, store_context=True)
                     # 这里可以考虑如果在线信息是错误消息（如"在线搜索有点忙..."），是否要特殊处理
                     # 当前逻辑是：即使在线搜索返回错误信息，也会让主AI尝试基于这个错误信息来回复
@@ -1557,6 +1407,7 @@ def process_user_messages(user_id):
         # --- 常规回复逻辑 (如果未启用联网、检测不需要联网、或联网失败) ---
         if reply is None: # 只有在尚未通过联网逻辑生成回复时才执行
             logger.info(f"为用户 {user_id} 执行常规回复（无联网信息）。")
+            from ai_platforms.llm_direct import get_deepseek_response
             reply = get_deepseek_response(merged_message, user_id, store_context=True)
 
         # --- 发送最终回复 ---
@@ -1858,6 +1709,7 @@ def is_emoji_request(text: str) -> Optional[str]:
             response = get_assistant_response(prompt, "emoji_detection").strip()
             logger.info(f"辅助模型情绪识别结果: {response}")
         else:
+            from ai_platforms.llm_direct import get_deepseek_response
             response = get_deepseek_response(prompt, "system", store_context=False).strip()
             logger.info(f"主模型情绪识别结果: {response}")
         
@@ -1922,6 +1774,10 @@ def clean_up_temp_files ():
         logger.info(f"目录 wxautox文件下载 不存在，无需删除")
 
 def is_quiet_time():
+    # 检查安静时间配置是否有效
+    if quiet_time_start is None or quiet_time_end is None:
+        return False
+        
     current_time = datetime.now().time()
     if quiet_time_start <= quiet_time_end:
         return quiet_time_start <= current_time <= quiet_time_end
@@ -1970,9 +1826,6 @@ def append_to_memory_section(user_id, content):
     except Exception as e:
         logger.error(f"记忆存储失败: {str(e)}", exc_info=True)
         raise  # 重新抛出异常供上层处理
-    except FileNotFoundError as e:
-        logger.error(f"文件未找到: {str(e)}")
-        raise
 
 def summarize_and_save(user_id):
     """总结聊天记录并存储记忆"""
@@ -2009,6 +1862,7 @@ def summarize_and_save(user_id):
             summary = get_assistant_response(summary_prompt, "memory_summary", is_summary=True)
         else:
             logger.info(f"使用主模型为用户 {user_id} 生成记忆总结")
+            from ai_platforms.llm_direct import get_deepseek_response
             summary = get_deepseek_response(summary_prompt, "system", store_context=False, is_summary=True)
 
         # 添加清洗，匹配可能存在的**重要度**或**摘要**字段以及##记忆片段 [%Y-%m-%d %A %H:%M]或[%Y-%m-%d %H:%M]或[%Y-%m-%d %H:%M:%S]或[%Y-%m-%d %A %H:%M:%S]格式的时间戳
@@ -2028,6 +1882,7 @@ def summarize_and_save(user_id):
             importance_response = get_assistant_response(importance_prompt, "memory_importance", is_summary=True)
         else:
             logger.info(f"使用主模型为用户 {user_id} 进行重要性评估")
+            from ai_platforms.llm_direct import get_deepseek_response
             importance_response = get_deepseek_response(importance_prompt, "system", store_context=False, is_summary=True)
         
         # 强化重要性提取逻辑
@@ -2380,6 +2235,7 @@ def process_group_summary(user_id):
             summary_prompt = build_default_summary_prompt(chat_content, time_description)
         
         # 调用AI生成总结
+        from ai_platforms.llm_direct import get_deepseek_response
         summary = get_deepseek_response(summary_prompt, f"{user_id}_summary", store_context=False, is_summary=True)
         
         if summary:
@@ -2633,6 +2489,7 @@ def send_error_reply(user_id, error_description_for_ai, fallback_message, error_
     logger.warning(f"准备为用户 {user_id} 发送错误提示: {error_context_log}")
     try:
         # 调用AI生成符合人设的错误消息
+        from ai_platforms.llm_direct import get_deepseek_response
         ai_error_reply = get_deepseek_response(error_description_for_ai, user_id=user_id, store_context=True)
         logger.info(f"AI生成的错误回复: {ai_error_reply[:100]}...")
         # 使用send_reply发送AI生成的回复
@@ -2700,6 +2557,7 @@ D) **非提醒请求**：例如 "今天天气怎么样?", "取消提醒"。
             logger.debug(f"辅助模型提醒解析原始响应 (分类器 v2): {ai_raw_response}")
         else:
             logger.info(f"向主模型发送提醒解析请求（区分时长），用户: {user_id}，内容: '{message_content}'")
+            from ai_platforms.llm_direct import get_deepseek_response
             ai_raw_response = get_deepseek_response(parsing_prompt, user_id="reminder_parser_classifier_v2_" + user_id, store_context=False)
             logger.debug(f"主模型提醒解析原始响应 (分类器 v2): {ai_raw_response}")
 
@@ -2715,8 +2573,12 @@ D) **非提醒请求**：例如 "今天天气怎么样?", "取消提醒"。
             return False
         
         try:
-            response_cleaned = re.sub(r"```json\n?|\n?```", "", response).strip()
-            reminder_data = json.loads(response_cleaned)
+            if response:
+                response_cleaned = re.sub(r"```json\n?|\n?```", "", response).strip()
+                reminder_data = json.loads(response_cleaned)
+            else:
+                logger.error("AI响应为空，无法解析提醒数据")
+                return
             logger.debug(f"解析后的JSON数据 (分类器 v2): {reminder_data}")
 
             reminder_type = reminder_data.get("type")
@@ -3000,6 +2862,7 @@ def send_confirmation_reply(user_id, confirmation_prompt, log_context, fallback_
     logger.debug(f"准备发送给 AI 用于生成确认消息的提示词（部分）: {confirmation_prompt[:250]}...")
     try:
         # 调用 AI 生成确认回复，存储上下文
+        from ai_platforms.llm_direct import get_deepseek_response
         confirmation_msg = get_deepseek_response(confirmation_prompt, user_id=user_id, store_context=True)
         logger.info(f"已为用户 {user_id} 生成提醒确认消息: {confirmation_msg[:100]}...")
         # 使用 send_reply 发送 AI 生成的确认消息
@@ -3489,6 +3352,7 @@ def needs_online_search(message: str, user_id: str) -> Optional[str]:
             response = get_assistant_response(detection_prompt, f"online_detection_{user_id}")
         else:
             logger.info(f"向主 AI 发送联网检测请求，用户: {user_id}，消息: '{message[:50]}...'")
+            from ai_platforms.llm_direct import get_deepseek_response
             response = get_deepseek_response(detection_prompt, user_id=f"online_detection_{user_id}", store_context=False)
 
         # 清理并判断响应
@@ -3553,7 +3417,12 @@ def get_online_model_response(query: str, user_id: str) -> Optional[str]:
             logger.error(f"在线 API 返回了空的选择项，用户: {user_id}")
             return None
 
-        reply = response.choices[0].message.content.strip()
+        reply = response.choices[0].message.content
+        if reply:
+            reply = reply.strip()
+        else:
+            logger.warning("在线模型返回空内容")
+            return None
         # 清理回复，去除思考过程
         if "</think>" in reply:
             reply = reply.split("</think>", 1)[1].strip()
