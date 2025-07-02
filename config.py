@@ -11,8 +11,8 @@
 # ***********************************************************************
 
 # 用户列表(请配置要和bot说话的账号的微信昵称！)
-# 例如：LISTEN_LIST = [['微信名1', '角色1'],['微信名2', '角色2']]
-LISTEN_LIST = [['测试群1', '角色1'], ['测试群2', '角色2'], ['raxcl', '角色2']]
+# 例如：LISTEN_LIST = [['微信名1', '角色1', 'llm_direct'],['微信名2', '角色2', 'coze']]
+LISTEN_LIST = [['测试群1', '角色1', 'llm_direct'], ['测试群2', '角色2', 'llm_direct'], ['raxcl', '角色2', 'llm_direct']]
 
 # DeepSeek API 配置
 DEEPSEEK_API_KEY = 'sk-wiyceuorksjphlaspgzgryeoqgosvdwhnvouobygewhcysfe'
@@ -175,6 +175,30 @@ DB_POOL_SIZE = 5
 DB_MAX_OVERFLOW = 10
 DB_POOL_TIMEOUT = 30
 DB_POOL_RECYCLE = 3600  # 连接回收时间（秒）
+
+# === AI平台配置 ===
+
+# === Coze平台配置 ===
+COZE_CONFIG = {
+    'api_key': 'your-coze-api-key',
+    'base_url': 'https://api.coze.cn/v3',
+    'bot_id': 'your-bot-id',
+    'user_id': 'default-user',  # 可以用微信昵称作为user_id
+    'stream': False,
+    'temperature': 0.8,
+    'max_tokens': 2000,
+}
+
+# === Dify平台配置 ===
+DIFY_CONFIG = {
+    'api_key': 'your-dify-api-key',
+    'base_url': 'https://api.dify.ai/v1',
+    'app_type': 'chatbot',  # 或 'workflow'
+    'user': 'wechat-bot',
+    'response_mode': 'blocking',  # 或 'streaming'
+    'temperature': 0.8,
+    'max_tokens': 2000,
+}
 
 # --- 配置文件结束 ---
 
