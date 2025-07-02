@@ -340,15 +340,9 @@ console_handler = logging.StreamHandler()
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
-# 获取微信窗口对象
-try:
-    wx = WeChat()
-except:
-    logger.error(f"\033[31m无法初始化微信接口，请确保您安装的是微信3.9版本，并且已经登录！\033[0m")
-    logger.error("\033[31m微信3.9版本下载地址：https://dldir1v6.qq.com/weixin/Windows/WeChatSetup.exe \033[0m")
-    exit(1)
-# 获取登录用户的名字
-ROBOT_WX_NAME = wx.nickname
+# 微信接口对象将在main()函数中初始化
+wx = None
+ROBOT_WX_NAME = None
 
 # 存储用户的计时器和随机等待时间
 user_timers = {}
@@ -408,6 +402,11 @@ def get_chat_type_info(user_name):
         bool: True表示群聊，False表示私聊，None表示未找到或出错
     """
     try:
+        # 检查wx对象是否已初始化
+        if wx is None:
+            logger.warning("微信接口尚未初始化，无法获取聊天类型信息")
+            return None
+            
         # 获取所有聊天窗口
         chats = wx.GetAllSubWindow()
         for chat in chats:
@@ -745,6 +744,11 @@ def keep_alive():
     
     while True:
         try:
+            # 检查wx对象是否已初始化
+            if wx is None:
+                time.sleep(check_interval)
+                continue
+                
             # 获取当前所有正在监听的用户昵称集合
             current_listening_users = set(wx.listen.keys())
             
@@ -1459,7 +1463,8 @@ def send_complete_message(user_id, message):
         logger.info(f"准备向 {user_id} 发送完整消息（不分段）")
         
         # 直接发送完整消息，不进行分割处理
-        wx.SendMsg(msg=message, who=user_id)
+        if wx is not None:
+            wx.SendMsg(msg=message, who=user_id)
         logger.info(f"已向 {user_id} 发送完整消息")
         
     except Exception as e:
@@ -1518,13 +1523,15 @@ def send_reply(user_id, sender_name, username, original_merged_message, reply):
         for idx, (action_type, content) in enumerate(message_actions):
             if action_type == 'emoji':
                 try:
-                    wx.SendFiles(filepath=content, who=user_id)
-                    logger.info(f"已向 {user_id} 发送表情包")
-                    time.sleep(random.uniform(0.5, 1.5))  # 表情包发送后随机延迟
+                    if wx is not None:
+                        wx.SendFiles(filepath=content, who=user_id)
+                        logger.info(f"已向 {user_id} 发送表情包")
+                        time.sleep(random.uniform(0.5, 1.5))  # 表情包发送后随机延迟
                 except Exception as e:
                     logger.error(f"发送表情包失败: {str(e)}")
             else:
-                wx.SendMsg(msg=content, who=user_id)
+                if wx is not None:
+                    wx.SendMsg(msg=content, who=user_id)
                 logger.info(f"分段回复 {idx+1}/{len(message_actions)} 给 {sender_name}: {content[:50]}...")
                 if ENABLE_MEMORY:
                     log_ai_reply_to_memory(username, content)
@@ -2922,7 +2929,7 @@ def trigger_reminder(user_id, timer_id, reminder_message):
         logger.info(f"已将提醒消息 '{reminder_message}' 添加到用户 {user_id} 的消息队列，用以执行联网检查流程")
 
         # 可选：如果仍需语音通话功能，保留这部分
-        if USE_VOICE_CALL_FOR_REMINDERS:
+        if USE_VOICE_CALL_FOR_REMINDERS and wx is not None:
             try:
                 wx.VoiceCall(user_id)
                 logger.info(f"通过语音通话提醒用户 {user_id} (短期提醒)。")
@@ -3258,7 +3265,7 @@ def recurring_reminder_checker():
                                 logger.info(f"已将{reminder_type}提醒 '{content}' 添加到用户 {user_id} 的消息队列，用以执行联网检查流程")
 
                                 # 保留语音通话功能（如果启用）
-                                if USE_VOICE_CALL_FOR_REMINDERS:
+                                if USE_VOICE_CALL_FOR_REMINDERS and wx is not None:
                                     try:
                                         wx.VoiceCall(user_id)
                                         logger.info(f"通过语音通话提醒用户 {user_id} ({reminder_type}提醒)。")
@@ -3836,18 +3843,23 @@ def main():
         # --- 初始化 ---
         logger.info("\033[32m初始化微信接口和清理临时文件...\033[0m")
         clean_up_temp_files()
-        global wx
+        global wx, ROBOT_WX_NAME
         try:
             wx = WeChat()
-        except:
-            logger.error(f"\033[31m无法初始化微信接口，请确保您安装的是微信3.9版本，并且已经登录！\033[0m")
+            # 获取登录用户的名字
+            ROBOT_WX_NAME = wx.nickname
+            logger.info(f"已获取微信登录用户名称: {ROBOT_WX_NAME}")
+        except Exception as e:
+            logger.error(f"\033[31m无法初始化微信接口，请确保您安装的是微信3.9版本，并且已经登录！详细错误: {str(e)}\033[0m")
+            logger.error("\033[31m微信3.9版本下载地址：https://dldir1v6.qq.com/weixin/Windows/WeChatSetup.exe \033[0m")
             exit(1)
 
         for user_name in user_names:
             if user_name == ROBOT_WX_NAME:
                 logger.error(f"\033[31m您填写的用户列表中包含自己登录的微信昵称，请删除后再试！\033[0m")
                 exit(1)
-            ListenChat = wx.AddListenChat(nickname=user_name, callback=message_listener)
+            if wx is not None:
+                ListenChat = wx.AddListenChat(nickname=user_name, callback=message_listener)
             if ListenChat:
                 logger.info(f"成功添加监听用户{ListenChat}")
             else:
