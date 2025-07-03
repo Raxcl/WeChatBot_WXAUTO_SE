@@ -182,13 +182,55 @@ DB_POOL_RECYCLE = 3600  # 连接回收时间（秒）
 
 # === Coze平台配置 ===
 COZE_CONFIG = {
-    'api_key': 'your-coze-api-key',
-    'base_url': 'https://api.coze.cn/v3',
-    'bot_id': 'your-bot-id',
-    'user_id': 'default-user',  # 可以用微信昵称作为user_id
+    # JWT OAuth 配置
+    'client_type': 'jwt',
+    'client_id': '1172432460246',
+    'private_key': """-----BEGIN PRIVATE KEY-----
+MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQC7qhVAtVvZWpSd
+a1HHN3ODlAgQGRN6eMooB4rIjso+GOi0j7DT0bOX30Iem1c5UhqwPfomU5dM0EAG
+eTTQd1TShWgpS9n/771+Pi6X14nRR3ka88HWYSteeZ/0XcJg1hcb8VwEWpsFpSvr
+DhQPHhdZcXH7ZNzYzEZaAJuxmTV5x80Gxhw6taMW20YgJb8lJTBZdiSnxoeGAr2F
+vd1hgkOz52oZcKLu3t200uQchJvSv2A0rfunJ0VZgQ3OBauN0rbumEKfsz2Ud8v7
++qqORemXYDBcz3JVB89F7nsFNcfVOW1RZACNIt89eyGDmLX/5hnEyjlTlFe7qunc
+K4xXLa8VAgMBAAECggEALqAdqyfUE+7aJTlshklL6SlOjodYbFGV8nebPuShMWf5
+ayEXPy1nCEj3MckJFQwF5vtjCwIyQWqtOZ6EJXY8jBiKrlXy6hCLvVGgPGgYDPfL
+yks9QfD++DhSKkHgQTR35eCj6s4DHZYx0PL8v1vL09RojBv9ddzc7tAfXrLw0xpI
+mnaPXFYWYWdeRICT0MCnqDm88XOk3C2+Qrf+JpLg1TZG9KbgZePCgst5dik1tq7K
+K+GlP3l0Omt+Rg/rwUg3MhgDXtbmoxvA7GM9zu70jBjAakksq7Te7+ghqbt73OKt
+bzD8JbUx8ghAI+5svFpqFrflUfaSkgk/+mQOd7g3iQKBgQDtz/FI7r4B2H4SGZ92
+VFrYgFvE7Lca1CeTI0usvbCbCJiN4MNfi4+PzytVcQcM3r8Or9ud+KVnydE86sdV
+Afsdl/VD3OA31w+7msMuFeg56qDqenGhVDX3FJWhwNhizXqx4+501Lv4LAL4wnNj
+BtZo/QkDojTl8/n5DqmDfrj7bQKBgQDKBE8+rEEqtuHfOeMpeuWTSp9ie6fEdWkg
+NoGpo/rMIAoXwiZr3UeiKL2/wJlESk/Z7O/Pv3vqVmdOZpZZg7ngZ9Rb/+uXtEoT
+0BU4ehlfrfwI9tbYpmSe0nl7ncA3/gQuBERzsqBlaXCMBXYkKOPBga9rZOThv2SH
+3O1KF5LRSQKBgFLt/tBWIQB3xI7/THJxPDTfniDwA3JhpWNUHaGhjKKjvr9LMBZz
+jp6xugTTo4fDbZDrloRiHxwwbrz1iomEZVOOmEMQFUijwKLFd2bs0MzRm0fpZxLB
+UQhWr0929n6N9UlvmMo5HUuP3YFuHdrcmYyHIMuZlyTRjcxiZo6qdEuJAoGANtyw
+wK57DCSadsr7vBoaGsQbQN2gFCRmpk7nK7DSvXi+BPG/CXAQsiMqVNbzSK59vQsx
+nVO9TUilyY7mqeyyIBVSgKGh05MswvCxsqLGHUvctHqEolWd4dv7De0rdIlRjUWv
+aVRLZv8Zh408JlnMcJLNlvbRidU2cgc3kfWQ87ECgYBNUxYDvn7e4G1R9gWmzcmr
+qVWUuGj1dYiw68y0gAjKigSiTvORp3G33mfroCnbn0iX8ED0Iv6tR7otwWammpcd
+H+Vlebrpe1IZWXLiD6mzBciYWHlPUMLSRNY7ueJb/ClZyC/W0DtmrjSczl/HY+sp
+5pl8t6mPuBoW/yXQeTuNrg==
+-----END PRIVATE KEY-----""",
+    'public_key_id': 'Wh_cgx5H1xz0MNA8O5t7-POb3dQmVfdloDc_X8BL0ek',
+    'www_base_url': 'https://www.coze.cn',
+    'api_base_url': 'https://api.coze.cn',
+    
+    # Bot 配置
+    'bot_id': '7520138571366367284',  # ⚠️ 请替换为你在Coze平台创建的Bot ID
     'stream': False,
     'temperature': 0.8,
     'max_tokens': 2000,
+    
+    # Token 配置
+    'token_ttl': 86400,  # JWT token 有效期（秒，最长24小时=86400秒）
+    'auto_refresh_token': True,  # 是否自动刷新 token
+    'token_refresh_threshold': 3600,  # token 剩余时间少于此值时自动刷新（秒）
+    
+    # Token 存储（运行时会自动更新）
+    'current_token': None,  # 当前 token
+    'token_expires_at': None,  # token 过期时间戳
 }
 
 # === Dify平台配置 ===
@@ -201,6 +243,4 @@ DIFY_CONFIG = {
     'temperature': 0.8,
     'max_tokens': 2000,
 }
-
-# --- 配置文件结束 ---
 
