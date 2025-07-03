@@ -14,7 +14,7 @@
 # 格式：[['微信昵称', 'Prompt角色', 'AI平台']]
 # AI平台选项：'llm_direct'(大模型直连), 'coze'(Coze平台), 'dify'(Dify平台)
 # 例如：LISTEN_LIST = [['微信名1', '角色1', 'llm_direct'],['微信名2', '角色2', 'coze']]
-LISTEN_LIST = [['测试群1', '角色1', 'llm_direct'], ['测试群2', '角色2', 'llm_direct'], ['raxcl', '角色2', 'llm_direct']]
+LISTEN_LIST = [['测试群1', '李白', 'coze'], ['测试群2', '角色2', 'llm_direct'], ['raxcl', '角色2', 'llm_direct']]
 
 # DeepSeek API 配置
 DEEPSEEK_API_KEY = 'sk-wiyceuorksjphlaspgzgryeoqgosvdwhnvouobygewhcysfe'
@@ -218,7 +218,7 @@ H+Vlebrpe1IZWXLiD6mzBciYWHlPUMLSRNY7ueJb/ClZyC/W0DtmrjSczl/HY+sp
     'api_base_url': 'https://api.coze.cn',
     
     # Bot 配置
-    'bot_id': '7520138571366367284',  # ⚠️ 请替换为你在Coze平台创建的Bot ID
+    'bot_id': '7522683039198085155',  # ⚠️ 请替换为你在Coze平台创建的Bot ID
     'stream': False,
     'temperature': 0.8,
     'max_tokens': 2000,
