@@ -106,7 +106,11 @@ class PlatformRouter:
             return "抱歉，AI服务暂时不可用。"
         
         try:
-            logger.debug(f"将用户 {user_id} 的消息路由到 {platform.get_platform_name()}")
+            logger.info(f"将用户 {user_id} 的消息路由到 {platform.get_platform_name()}")
+            logger.info(f"message: {message}")
+            logger.info(f"store_context: {store_context}")
+            logger.info(f"is_summary: {is_summary}")
+            logger.info(f"system_prompt: {system_prompt}")
             response = platform.get_response(
                 message, 
                 user_id, 

@@ -8,3 +8,19 @@
 2025-07-03 Thursday 15:24:01 | [李白] 抱歉，消息处理出现异常，请稍后再试。
 2025-07-03 Thursday 15:42:15 | [测试群1] [群聊消息-来自群'测试群1'-发送者:raxcl]:中午好呀
 2025-07-03 Thursday 15:42:28 | [李白] 抱歉，消息处理出现异常，请稍后再试。
+2025-07-03 Thursday 15:51:08 | [测试群1] [群聊消息-来自群'测试群1'-发送者:raxcl]:中午好呀
+2025-07-03 Thursday 15:51:21 | [李白] 抱歉，消息处理出现异常，请稍后再试。
+2025-07-03 Thursday 16:03:23 | [测试群1] [群聊消息-来自群'测试群1'-发送者:raxcl]:中午好呀
+2025-07-03 Thursday 16:03:37 | [李白] 对不起，现在还不行哦
+2025-07-03 Thursday 16:07:43 | [测试群1] [群聊消息-来自群'测试群1'-发送者:raxcl]:中午好呀
+2025-07-03 Thursday 16:07:56 | [李白] 对不起，现在还不行哦
+2025-07-03 Thursday 16:41:26 | [测试群1] [群聊消息-来自群'测试群1'-发送者:raxcl]:中午好呀
+2025-07-03 Thursday 16:41:41 | [李白] 请你明确一下具体需求哦，比如对这段群聊消息进行润色、分析、续写等等，这样我才能更准确地为你提供服务。 {"msg_type":"generate_answer_finish","data":"","from_module":null,"from_unit":null}{"msg_type":"generate_answer_finish","data":"{\"finish_reason
+2025-07-03 Thursday 16:41:45 | [李白] ":0,
+2025-07-03 Thursday 16:41:59 | [李白] "FinData\":\"\"}","from_module":null,"from_unit":null}
+2025-07-03 Thursday 16:49:49 | [测试群1] [群聊消息-来自群'测试群1'-发送者:raxcl]:中午好呀
+2025-07-03 Thursday 16:50:04 | [李白] 请你明确一下具体需求哦，比如对这段话进行润色、提取关键信息、根据其进行回复等等，这样我才能更准确地为你提供服务。 {"msg_type":"generate_answer_finish","data":"","from_module":null,"from_unit":null}{"msg_type":"generate_answer_finish","data":"{\"finish_reason
+2025-07-03 Thursday 16:50:07 | [李白] ":0,
+2025-07-03 Thursday 16:50:20 | [李白] "FinData\":\"\"}","from_module":null,"from_unit":null}
+2025-07-03 Thursday 16:52:32 | [测试群1] [群聊消息-来自群'测试群1'-发送者:raxcl]:中午好呀
+2025-07-03 Thursday 16:52:58 | [李白] 抱歉，服务暂时不可用，请稍后再试。

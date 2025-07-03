@@ -181,22 +181,28 @@ class CozePlatform(BasePlatform):
             # 构建消息列表
             additional_messages = []
             
-            # 如果有系统提示词，添加为助手回复（按照Coze的建议格式）
-            if system_prompt:
-                additional_messages.extend([
-                    Message.build_user_question_text("请按照以下角色设定进行对话："),
-                    Message.build_assistant_answer(system_prompt),
-                ])
-            
             # 添加用户消息
             additional_messages.append(Message.build_user_question_text(message))
             
+            # 构建parameters参数
+            parameters = None
+            if system_prompt:
+                parameters = {"system_prompt": system_prompt}
+            
+            # 打印请求参数日志
+            logger.info(f"Coze请求参数: bot_id={self.config['bot_id']}, user_id={user_id}, additional_messages={additional_messages}, parameters={parameters}")
+            
+            chat_poll = None  # 先定义，便于异常时打印
             # 使用官方推荐的 create_and_poll 方法
             chat_poll = self.coze_client.chat.create_and_poll(
                 bot_id=self.config['bot_id'],
                 user_id=user_id,
                 additional_messages=additional_messages,
+                parameters=parameters
             )
+            
+            # 打印Coze API原始返回内容
+            logger.info(f"Coze API原始返回: {repr(chat_poll)}")
             
             # 检查对话状态
             if chat_poll.chat.status == ChatStatus.COMPLETED:
@@ -228,11 +234,16 @@ class CozePlatform(BasePlatform):
                 return "抱歉，对话处理超时，请稍后再试。"
             
         except Exception as e:
-            error_msg = str(e)
+            try:
+                error_msg = str(e)
+            except Exception as ee:
+                error_msg = f"异常对象无法转为字符串: {repr(e)}，二次异常: {repr(ee)}"
             # 特殊处理消息验证错误
             if "validation error for Message" in error_msg:
-                logger.error(f"Coze 消息格式验证错误 - 用户: {user_id}, 可能是API返回格式异常")
-                return "抱歉，消息处理出现异常，请稍后再试。"
+                logger.error(f"Coze 消息格式验证错误 - 用户: {user_id}, 可能是API返回格式异常，原始错误: {error_msg}")
+                logger.error(f"chat_poll内容: {repr(locals().get('chat_poll', None))}")
+                logger.error(f"Coze请求参数: bot_id={self.config['bot_id']}, user_id={user_id}, additional_messages={additional_messages}, parameters={parameters}")
+                return "对不起，现在还不行哦"
             else:
                 logger.error(f"Coze API 调用失败 - 用户: {user_id}, 错误: {error_msg}", exc_info=True)
                 return self.handle_error(e, user_id)
