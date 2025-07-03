@@ -329,7 +329,8 @@ async_http_handler.setFormatter(formatter)
 
 # 配置根Logger
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+# logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 logger.handlers.clear()
 
 # 添加异步HTTP日志处理器

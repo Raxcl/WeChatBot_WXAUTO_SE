@@ -5,7 +5,7 @@ import os
 import time
 from typing import Optional
 from .base_platform import BasePlatform
-from cozepy import COZE_CN_BASE_URL, ChatStatus, Coze, Message, TokenAuth
+from cozepy import COZE_CN_BASE_URL, Coze, TokenAuth
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class CozePlatform(BasePlatform):
     Coze平台实现
     
     基于官方示例使用 Coze SDK 进行对话
-    支持 system_prompt 参数
+    使用基类的上下文管理逻辑，确保与其他平台行为一致
     """
     
     def __init__(self, config=None):
@@ -62,7 +62,11 @@ class CozePlatform(BasePlatform):
             base_url=self.coze_api_base
         )
         
-        logger.info(f"Coze 平台初始化成功，Bot ID: {self.config.get('bot_id', '未设置')}")
+        logger.info(f"Coze 平台初始化成功，工作流 ID: {self.config.get('bot_id', '未设置')}")
+    
+    def get_platform_name(self):
+        """获取平台名称"""
+        return "Coze"
     
     def get_coze_api_base(self) -> str:
         """获取 Coze API Base URL"""
@@ -154,83 +158,111 @@ class CozePlatform(BasePlatform):
     
     def validate_config(self):
         """验证配置是否有效"""
-        # 检查Bot ID
+        # 检查工作流ID（bot_id字段现在用作workflow_id）
         if not self.config.get('bot_id') or self.config['bot_id'] == 'your-bot-id':
-            raise ValueError("Coze 配置中的 bot_id 无效，请设置正确的 Bot ID")
+            raise ValueError("Coze 配置中的 bot_id 无效，请设置正确的工作流 ID（Workflow ID）")
         
         # 检查API Token（这里不直接验证，留给 get_coze_api_token 方法处理）
         # 这样可以给出更详细的错误信息
     
-    def get_response(self, message, user_id, store_context=True, is_summary=False, system_prompt=None):
+    def _call_api(self, messages, user_id, **kwargs):
         """
-        获取 Coze 响应
+        调用 Coze API
         
         Args:
-            message (str): 用户消息
+            messages (list): 消息列表，格式为 [{"role": "user/assistant/system", "content": "..."}]
             user_id (str): 用户ID
-            store_context (bool): 是否存储上下文 (Coze 内部管理上下文)
-            is_summary (bool): 是否为总结任务
-            system_prompt (str): 系统提示词
+            **kwargs: 其他参数（如is_summary）
         
         Returns:
             str: AI回复内容
         """
         try:
-            logger.info(f"调用 Coze API - 用户: {user_id}, 消息: {message[:100]}...")
+            # 为保持与LLM Direct完全一致的行为，我们只传递当前消息给Coze
+            # 让基类的上下文管理完全接管历史管理，而不依赖Coze平台的自动上下文
+            # todo 暂停 system_prompt为空，怀疑 messages 为空，需要判断大模型直连那边的提示词如何获取的
+            current_message = ""
+            system_prompt = None
             
-            # 构建消息列表
-            additional_messages = []
+            # 只提取当前消息和系统提示词
+            for msg in messages:
+                if msg["role"] == "system":
+                    system_prompt = msg["content"]
+                elif msg["role"] == "user":
+                    current_message = msg["content"]  # 使用最后一条用户消息
             
-            # 添加用户消息
-            additional_messages.append(Message.build_user_question_text(message))
+            logger.info(f"调用 Coze API - 用户: {user_id}, 当前消息: {current_message[:100]}...")
+            logger.info(f"注意: 使用基类上下文管理，确保与LLM Direct行为完全一致")
             
-            # 构建parameters参数
+            # 构建工作流参数 - 工作流模式下不需要additional_messages
             parameters = None
             if system_prompt:
-                parameters = {"system_prompt": system_prompt}
+                parameters = {"input":current_message,"system_prompt": system_prompt}
+            else:
+                parameters = {"input": current_message}
             
             # 打印请求参数日志
-            logger.info(f"Coze请求参数: bot_id={self.config['bot_id']}, user_id={user_id}, additional_messages={additional_messages}, parameters={parameters}")
+            logger.info(f"Coze工作流请求参数: workflow_id={self.config['bot_id']}, user_id={user_id}, parameters={parameters}")
             
-            chat_poll = None  # 先定义，便于异常时打印
-            # 使用官方推荐的 create_and_poll 方法
-            chat_poll = self.coze_client.chat.create_and_poll(
-                bot_id=self.config['bot_id'],
-                user_id=user_id,
-                additional_messages=additional_messages,
+            workflow = None  # 先定义，便于异常时打印
+            # 使用工作流替代对话流，更适合群聊助手场景
+            # Call the coze.workflows.runs.create method to create a workflow run
+            workflow = self.coze_client.workflows.runs.create(
+                workflow_id=self.config['bot_id'],
                 parameters=parameters
             )
             
             # 打印Coze API原始返回内容
-            logger.info(f"Coze API原始返回: {repr(chat_poll)}")
+            logger.info(f"Coze 工作流API原始返回: {repr(workflow)}")
             
-            # 检查对话状态
-            if chat_poll.chat.status == ChatStatus.COMPLETED:
-                # 提取回复内容 - 使用更安全的方式
+            # 检查工作流执行状态和提取结果
+            if workflow:
+                # 提取工作流执行结果
                 reply_content = ""
                 try:
-                    if hasattr(chat_poll, 'messages') and chat_poll.messages:
-                        for message_obj in chat_poll.messages:
-                            # 安全地提取消息内容
-                            if hasattr(message_obj, 'content'):
-                                content = message_obj.content
-                                if isinstance(content, str) and content.strip():
-                                    reply_content += content
+                    # 工作流结果可能在不同的属性中，尝试多种可能的结构
+                    workflow_data = getattr(workflow, 'data', None)
+                    if workflow_data:
+                        # 如果结果在data属性中
+                        if isinstance(workflow_data, str):
+                            reply_content = workflow_data
+                        else:
+                            data_output = getattr(workflow_data, 'output', None)
+                            data_result = getattr(workflow_data, 'result', None)
+                            if data_output:
+                                reply_content = str(data_output)
+                            elif data_result:
+                                reply_content = str(data_result)
+                    else:
+                        # 尝试直接获取output或result属性
+                        workflow_output = getattr(workflow, 'output', None)
+                        workflow_result = getattr(workflow, 'result', None)
+                        
+                        if workflow_output:
+                            reply_content = str(workflow_output)
+                        elif workflow_result:
+                            reply_content = str(workflow_result)
+                        else:
+                            # 如果都没有，尝试直接转换整个workflow对象
+                            reply_content = str(workflow)
+                            logger.warning(f"未找到标准的工作流输出属性，使用整个结果: {workflow}")
+                        
                 except Exception as msg_error:
-                    logger.warning(f"提取消息内容时出错: {msg_error}")
-                    # 尝试使用更简单的方式获取回复
+                    logger.warning(f"提取工作流结果时出错: {msg_error}")
                     reply_content = "抱歉，我现在有点忙，稍后再聊吧。"
                 
-                if reply_content.strip():
-                    logger.info(f"Coze 回复获取成功 - 用户: {user_id}")
-                    if hasattr(chat_poll.chat, 'usage') and chat_poll.chat.usage:
-                        logger.debug(f"Token 使用量: {chat_poll.chat.usage.token_count}")
+                if reply_content and reply_content.strip():
+                    logger.info(f"Coze 工作流执行成功 - 用户: {user_id}")
+                    # 工作流可能有不同的使用量统计方式
+                    workflow_usage = getattr(workflow, 'usage', None)
+                    if workflow_usage:
+                        logger.debug(f"工作流资源使用量: {workflow_usage}")
                     return reply_content.strip()
                 else:
-                    logger.warning(f"Coze 对话完成但无有效回复 - 用户: {user_id}")
+                    logger.warning(f"Coze 工作流执行完成但无有效输出 - 用户: {user_id}")
                     return "抱歉，我现在有点忙，稍后再聊吧。"
             else:
-                logger.warning(f"Coze 对话未正常完成，状态: {chat_poll.chat.status} - 用户: {user_id}")
+                logger.warning(f"Coze 工作流执行失败，无返回结果 - 用户: {user_id}")
                 return "抱歉，对话处理超时，请稍后再试。"
             
         except Exception as e:
@@ -240,9 +272,9 @@ class CozePlatform(BasePlatform):
                 error_msg = f"异常对象无法转为字符串: {repr(e)}，二次异常: {repr(ee)}"
             # 特殊处理消息验证错误
             if "validation error for Message" in error_msg:
-                logger.error(f"Coze 消息格式验证错误 - 用户: {user_id}, 可能是API返回格式异常，原始错误: {error_msg}")
-                logger.error(f"chat_poll内容: {repr(locals().get('chat_poll', None))}")
-                logger.error(f"Coze请求参数: bot_id={self.config['bot_id']}, user_id={user_id}, additional_messages={additional_messages}, parameters={parameters}")
+                logger.error(f"Coze 工作流验证错误 - 用户: {user_id}, 可能是API返回格式异常，原始错误: {error_msg}")
+                logger.error(f"workflow内容: {repr(locals().get('workflow', None))}")
+                logger.error(f"Coze工作流请求参数: workflow_id={self.config['bot_id']}, user_id={user_id}, parameters={parameters}")
                 return "对不起，现在还不行哦"
             else:
                 logger.error(f"Coze API 调用失败 - 用户: {user_id}, 错误: {error_msg}", exc_info=True)
@@ -357,6 +389,5 @@ class CozePlatform(BasePlatform):
             
         except Exception as e:
             logger.warning(f"回写token到config.py失败: {e}")
-
     
  

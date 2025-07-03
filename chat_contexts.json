@@ -1,1 +1,12 @@
-{}
+{
+    "测试群1": [
+        {
+            "role": "user",
+            "content": "[2025-07-03 Thursday 20:21:59] [群聊消息-来自群'测试群1'-发送者:raxcl]:中午好呀"
+        },
+        {
+            "role": "assistant",
+            "content": "{\"content_type\":1,\"data\":\"请你明确一下具体需求哦，比如对这段内容进行润色、提取关键信息、根据其进行回复等等，这样我才能更准确地满足你的要求。  \",\"original_result\":null,\"type_for_model\":2}"
+        }
+    ]
+}

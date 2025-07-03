@@ -220,7 +220,7 @@ H+Vlebrpe1IZWXLiD6mzBciYWHlPUMLSRNY7ueJb/ClZyC/W0DtmrjSczl/HY+sp
     'api_base_url': 'https://api.coze.cn',
     
     # Bot 配置
-    'bot_id': '7522683039198085155',  # ⚠️ 请替换为你在Coze平台创建的Bot ID
+    'bot_id': '7522684897447526438',  # ⚠️ 请替换为你在Coze平台创建的Bot ID
     'stream': False,
     'temperature': 0.8,
     'max_tokens': 2000,

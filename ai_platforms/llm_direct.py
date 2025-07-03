@@ -37,7 +37,7 @@ class LLMDirectPlatform(BasePlatform):
     大模型直连平台实现
     
     直接调用大模型API（如DeepSeek、OpenAI等），
-    复用现有的逻辑和上下文管理机制。
+    复用基类的上下文管理机制。
     """
     
     def __init__(self, config=None):
@@ -68,141 +68,28 @@ class LLMDirectPlatform(BasePlatform):
         if not self.config['api_key'] or self.config['api_key'] == "your-api-key":
             raise ValueError("Invalid API key in config")
     
-    def get_response(self, message, user_id, store_context=True, is_summary=False, system_prompt=None):
+    def get_platform_name(self):
+        """获取平台名称"""
+        return "LLM Direct"
+    
+    def _call_api(self, messages, user_id, **kwargs):
         """
-        获取大模型响应
-        
-        直接调用经过验证的 get_deepseek_response 函数，确保使用稳定可靠的实现。
+        调用大模型API
         
         Args:
-            message (str): 用户消息
+            messages (list): 消息列表
             user_id (str): 用户ID
-            store_context (bool): 是否存储上下文
-            is_summary (bool): 是否为总结任务
-            system_prompt (str): 系统提示词，默认None
+            **kwargs: 其他参数（如is_summary）
         
         Returns:
             str: AI回复内容
         """
-        # 调用经过验证的 get_deepseek_response 函数
-        return get_deepseek_response(
-            message, 
-            user_id, 
-            store_context=store_context, 
-            is_summary=is_summary,
-            system_prompt=system_prompt
-        )
-
-
-
-    
-def get_deepseek_response(message, user_id, store_context=True, is_summary=False, system_prompt=None):
-    """
-    从 DeepSeek API 获取响应，确保正确的上下文处理，并持久化上下文。
-
-    参数:
-        message (str): 用户的消息或系统提示词（用于工具调用）。
-        user_id (str): 用户或系统组件的标识符。
-        store_context (bool): 是否将此交互存储到聊天上下文中。
-                              对于工具调用（如解析或总结），设置为 False。
-        system_prompt (str): 自定义系统提示词，如果提供将覆盖默认的用户角色提示词。
-    """
-    try:
-        # 延迟导入避免循环依赖
-        import bot
-        chat_contexts = bot.chat_contexts
-        queue_lock = bot.queue_lock
-        get_user_prompt = bot.get_user_prompt
-        load_chat_contexts = bot.load_chat_contexts
-        save_chat_contexts = bot.save_chat_contexts
-        
-        # 每次调用都重新加载聊天上下文，以应对文件被外部修改的情况
-        load_chat_contexts()
-        
-        logger.info(f"调用 Chat API - ID: {user_id}, 是否存储上下文: {store_context}, 消息: {message[:100]}...") # 日志记录消息片段
-
-        messages_to_send = []
-        context_limit = MAX_GROUPS * 2  # 最大消息总数（不包括系统消息）
-
-        if store_context:
-            # --- 处理需要上下文的常规聊天消息 ---
-            # 1. 获取该用户的系统提示词
-            try:
-                # 如果提供了自定义系统提示词，优先使用
-                if system_prompt:
-                    messages_to_send.append({"role": "system", "content": system_prompt})
-                    logger.info(f"使用自定义系统提示词 - 用户: {user_id}")
-                else:
-                    user_prompt = get_user_prompt(user_id)
-                    messages_to_send.append({"role": "system", "content": user_prompt})
-            except FileNotFoundError as e:
-                logger.error(f"用户 {user_id} 的提示文件错误: {e}，使用默认提示。")
-                fallback_prompt = system_prompt if system_prompt else "你是一个乐于助人的助手。"
-                messages_to_send.append({"role": "system", "content": fallback_prompt})
-
-            # 2. 管理并检索聊天历史记录
-            with queue_lock: # 确保对 chat_contexts 的访问是线程安全的
-                if user_id not in chat_contexts:
-                    chat_contexts[user_id] = []
-
-                # 在添加当前消息之前获取现有历史记录
-                history = list(chat_contexts.get(user_id, []))  # 获取副本
-
-                # 如果历史记录超过限制，则进行裁剪
-                if len(history) > context_limit:
-                    history = history[-context_limit:]  # 保留最近的消息
-
-                # 将历史消息添加到 API 请求列表中
-                messages_to_send.extend(history)
-
-                # 3. 将当前用户消息添加到 API 请求列表中
-                messages_to_send.append({"role": "user", "content": message})
-
-                # 4. 在准备 API 调用后更新持久上下文
-                # 将用户消息添加到持久存储中
-                chat_contexts[user_id].append({"role": "user", "content": message})
-                # 如果需要，裁剪持久存储（在助手回复后会再次裁剪）
-                if len(chat_contexts[user_id]) > context_limit + 1:  # +1 因为刚刚添加了用户消息
-                    chat_contexts[user_id] = chat_contexts[user_id][-(context_limit + 1):]
-                
-                # 保存上下文到文件
-                save_chat_contexts() # 在用户消息添加后保存一次
-
-        else:
-            # --- 处理工具调用（如提醒解析、总结） ---
-            # 如果提供了系统提示词，添加到消息中
-            if system_prompt:
-                messages_to_send.append({"role": "system", "content": system_prompt})
-                logger.info(f"工具调用使用自定义系统提示词 - ID: {user_id}")
-            
-            messages_to_send.append({"role": "user", "content": message})
-            logger.info(f"工具调用 (store_context=False)，ID: {user_id}。仅发送提供的消息。")
-
-        # --- 调用 API ---
-        reply = call_chat_api_with_retry(messages_to_send, user_id, is_summary=is_summary)
-
-        # --- 如果需要，存储助手回复到上下文中 ---
-        if store_context:
-            with queue_lock: # 再次获取锁来更新和保存
-                if user_id not in chat_contexts:
-                   chat_contexts[user_id] = []  # 安全初始化 (理论上此时应已存在)
-
-                chat_contexts[user_id].append({"role": "assistant", "content": reply})
-
-                if len(chat_contexts[user_id]) > context_limit:
-                    chat_contexts[user_id] = chat_contexts[user_id][-context_limit:]
-                
-                # 保存上下文到文件
-                save_chat_contexts() # 在助手回复添加后再次保存
-        
-        return reply
-
-    except Exception as e:
-        logger.error(f"Chat 调用失败 (ID: {user_id}): {str(e)}", exc_info=True)
-        return "抱歉，我现在有点忙，稍后再聊吧。"
+        is_summary = kwargs.get('is_summary', False)
+        return call_chat_api_with_retry(messages, user_id, is_summary=is_summary)
 
 
 def strip_before_thought_tags(text):
+    """去除思考标签前的内容"""
     # 匹配并截取 </thought> 或 </think> 后面的内容
     match = re.search(r'(?:</thought>|</think>)([\s\S]*)', text)
     if match:
@@ -218,6 +105,7 @@ def call_chat_api_with_retry(messages_to_send, user_id, max_retries=2, is_summar
         messages_to_send (list): 要发送给 API 的消息列表。
         user_id (str): 用户或系统组件的标识符。
         max_retries (int): 最大重试次数。
+        is_summary (bool): 是否为总结任务。
 
     返回:
         str: API 返回的文本回复。
@@ -247,7 +135,6 @@ def call_chat_api_with_retry(messages_to_send, user_id, max_retries=2, is_summar
                         filtered_content = strip_before_thought_tags(content)
                         if filtered_content:
                             return filtered_content
-
 
             # 记录错误日志
             logger.error(f"错误请求消息体: {MODEL}")
@@ -295,3 +182,13 @@ def call_chat_api_with_retry(messages_to_send, user_id, max_retries=2, is_summar
         attempt += 1
 
     raise RuntimeError("抱歉，我现在有点忙，稍后再聊吧。")
+
+
+# 为了兼容性，保留原有的函数（现在只是一个包装器）
+def get_deepseek_response(message, user_id, store_context=True, is_summary=False, system_prompt=None):
+    """
+    兼容性包装器，建议直接使用LLMDirectPlatform
+    """
+    logger.warning("get_deepseek_response函数已弃用，建议使用LLMDirectPlatform")
+    platform = LLMDirectPlatform()
+    return platform.get_response(message, user_id, store_context, is_summary, system_prompt)
