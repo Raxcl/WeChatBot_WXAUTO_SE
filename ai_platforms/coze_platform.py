@@ -104,6 +104,16 @@ class CozePlatform(BasePlatform):
     def get_jwt_token(self) -> str:
         """使用JWT OAuth获取token"""
         try:
+            # 先检查config.py中是否有有效的缓存token
+            cached_token = self.load_token_from_config()
+            if cached_token:
+                # 使用缓存的token
+                self.config['current_token'] = cached_token
+                return cached_token
+            
+            # 缓存中没有有效token，获取新的
+            logger.info("正在获取新的JWT OAuth token...")
+            
             from cozepy import JWTAuth, JWTOAuthApp
             
             # 创建 JWT OAuth App
@@ -114,9 +124,28 @@ class CozePlatform(BasePlatform):
                 base_url=self.coze_api_base,
             )
             
-            # 获取token
-            oauth_token = jwt_oauth_app.get_access_token()
-            logger.info("JWT OAuth token 获取成功")
+            # 获取token - 使用最大有效期
+            oauth_token = jwt_oauth_app.get_access_token(ttl=86399)  # 最大24小时有效期
+            logger.info("JWT OAuth token 获取成功，oauth_token: %s", oauth_token)
+            
+            # 处理过期时间 - expires_in可能是时间戳而不是秒数
+            current_time = time.time()
+            expires_in_value = oauth_token.expires_in
+            
+            expires_at = expires_in_value
+            logger.info(f"过期时间: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(expires_at))}")
+            
+            # 计算实际剩余时间
+            remaining_hours = (expires_at - current_time) / 3600
+            logger.info(f"Token实际剩余有效期: {remaining_hours:.1f} 小时")
+            
+            # 保存token到实例配置中（仅在内存中）
+            self.config['current_token'] = oauth_token.access_token
+            self.config['token_expires_at'] = expires_at
+            
+            # 回写token到config.py文件
+            self.save_token_to_config(oauth_token.access_token, expires_at)
+            
             return oauth_token.access_token
             
         except Exception as e:
@@ -169,15 +198,23 @@ class CozePlatform(BasePlatform):
                 additional_messages=additional_messages,
             )
             
-            # 提取回复内容
-            reply_content = ""
-            if chat_poll.messages:
-                for message_obj in chat_poll.messages:
-                    if hasattr(message_obj, 'content') and message_obj.content:
-                        reply_content += message_obj.content
-            
             # 检查对话状态
             if chat_poll.chat.status == ChatStatus.COMPLETED:
+                # 提取回复内容 - 使用更安全的方式
+                reply_content = ""
+                try:
+                    if hasattr(chat_poll, 'messages') and chat_poll.messages:
+                        for message_obj in chat_poll.messages:
+                            # 安全地提取消息内容
+                            if hasattr(message_obj, 'content'):
+                                content = message_obj.content
+                                if isinstance(content, str) and content.strip():
+                                    reply_content += content
+                except Exception as msg_error:
+                    logger.warning(f"提取消息内容时出错: {msg_error}")
+                    # 尝试使用更简单的方式获取回复
+                    reply_content = "抱歉，我现在有点忙，稍后再聊吧。"
+                
                 if reply_content.strip():
                     logger.info(f"Coze 回复获取成功 - 用户: {user_id}")
                     if hasattr(chat_poll.chat, 'usage') and chat_poll.chat.usage:
@@ -191,8 +228,14 @@ class CozePlatform(BasePlatform):
                 return "抱歉，对话处理超时，请稍后再试。"
             
         except Exception as e:
-            logger.error(f"Coze API 调用失败 - 用户: {user_id}, 错误: {str(e)}", exc_info=True)
-            return self.handle_error(e, user_id)
+            error_msg = str(e)
+            # 特殊处理消息验证错误
+            if "validation error for Message" in error_msg:
+                logger.error(f"Coze 消息格式验证错误 - 用户: {user_id}, 可能是API返回格式异常")
+                return "抱歉，消息处理出现异常，请稍后再试。"
+            else:
+                logger.error(f"Coze API 调用失败 - 用户: {user_id}, 错误: {error_msg}", exc_info=True)
+                return self.handle_error(e, user_id)
     
     def handle_error(self, error, user_id):
         """处理错误"""
@@ -216,5 +259,93 @@ class CozePlatform(BasePlatform):
         else:
             logger.error(f"Coze 未知错误 - 用户: {user_id}, 错误: {error}")
             return "抱歉，服务暂时不可用，请稍后再试。"
+    
+    def load_token_from_config(self):
+        """
+        从config.py文件加载token
+        """
+        try:
+            import sys
+            import os
+            
+            # 获取config模块
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            import config
+            
+            if not hasattr(config, 'COZE_CONFIG'):
+                return None
+            
+            current_token = config.COZE_CONFIG.get('current_token')
+            expires_at = config.COZE_CONFIG.get('token_expires_at')
+            
+            if not current_token or not expires_at:
+                logger.debug("config.py中未找到有效token信息")
+                return None
+            
+            current_time = time.time()
+            
+            # 获取刷新阈值（默认30分钟）
+            refresh_threshold = self.config.get('token_refresh_threshold', 1800)
+            
+            # 检查token是否过期（使用配置的刷新阈值）
+            if current_time < (expires_at - refresh_threshold):
+                remaining_hours = (expires_at - current_time) / 3600
+                logger.info(f"使用config.py中的缓存token，剩余有效期 {remaining_hours:.1f} 小时")
+                
+                # 同时更新实例配置
+                self.config['token_expires_at'] = expires_at
+                
+                return current_token
+            else:
+                logger.info(f"config.py中的token已过期或即将过期（剩余时间少于{refresh_threshold/60:.0f}分钟），将获取新token")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"从config.py加载token失败: {e}")
+            return None
+
+    def save_token_to_config(self, token, expires_at):
+        """
+        将token回写到config.py文件
+        """
+        try:
+            import os
+            import re
+            
+            # 获取config.py文件路径
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            config_file = os.path.join(project_root, 'config.py')
+            
+            # 读取config.py文件
+            with open(config_file, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # 更新current_token
+            token_pattern = r"'current_token':\s*[^,}]+"
+            new_token_line = f"'current_token': '{token}'"
+            content = re.sub(token_pattern, new_token_line, content)
+            
+            # 更新token_expires_at
+            expires_pattern = r"'token_expires_at':\s*[^,}]+"
+            new_expires_line = f"'token_expires_at': {expires_at}"
+            content = re.sub(expires_pattern, new_expires_line, content)
+            
+            # 写回文件
+            with open(config_file, 'w', encoding='utf-8') as f:
+                f.write(content)
+            
+            logger.info("Token 已成功回写到config.py文件")
+            
+            # 同时更新全局配置模块（避免需要重启）
+            import sys
+            sys.path.insert(0, project_root)
+            import config
+            if hasattr(config, 'COZE_CONFIG'):
+                config.COZE_CONFIG['current_token'] = token
+                config.COZE_CONFIG['token_expires_at'] = expires_at
+            
+        except Exception as e:
+            logger.warning(f"回写token到config.py失败: {e}")
+
     
  

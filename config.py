@@ -226,13 +226,13 @@ H+Vlebrpe1IZWXLiD6mzBciYWHlPUMLSRNY7ueJb/ClZyC/W0DtmrjSczl/HY+sp
     'max_tokens': 2000,
     
     # Token 配置（仅用于JWT OAuth方式）
-    'token_ttl': 86400,  # JWT token 有效期（秒，最长24小时=86400秒）
+    'token_ttl': 86399,  # JWT token 有效期（秒，最大24小时=86399秒）
     'auto_refresh_token': True,  # 是否自动刷新 token
-    'token_refresh_threshold': 3600,  # token 剩余时间少于此值时自动刷新（秒）
+    'token_refresh_threshold': 1800,  # token 剩余时间少于此值时自动刷新（秒，提前30分钟）
     
     # Token 存储（运行时会自动更新）
-    'current_token': None,  # 当前 token
-    'token_expires_at': None,  # token 过期时间戳
+    'current_token': 'czs_lLyRJ3EXGO8SLPoB2L8POObBzHbL2MLDNmjGCTZXV6rtP8NOt66eogN1jnZ7R6NrJ',  # 当前 token
+    'token_expires_at': 1751614686,  # token 过期时间戳
 }
 
 # === Dify平台配置 ===

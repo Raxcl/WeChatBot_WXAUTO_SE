@@ -26,9 +26,9 @@ class BasePlatform(ABC):
         # 验证配置
         try:
             self.validate_config()
-            logger.info(f"Successfully initialized {self.platform_name} platform")
+            logger.info(f"成功初始化 {self.platform_name} 平台")
         except Exception as e:
-            logger.error(f"Failed to initialize {self.platform_name} platform: {e}")
+            logger.error(f"初始化 {self.platform_name} 平台失败: {e}")
             raise
     
     @abstractmethod
@@ -74,7 +74,7 @@ class BasePlatform(ABC):
             str: 错误提示消息
         """
         error_msg = str(error)
-        logger.error(f"Platform {self.platform_name} error for user {user_id}: {error_msg}")
+        logger.error(f"平台 {self.platform_name} 用户 {user_id} 发生错误: {error_msg}")
         
         # 根据错误类型返回不同的提示
         if "rate limit" in error_msg.lower():
@@ -132,5 +132,5 @@ class BasePlatform(ABC):
             )
             return bool(test_response and len(test_response.strip()) > 0)
         except Exception as e:
-            logger.error(f"Platform {self.platform_name} connection test failed: {e}")
+            logger.error(f"平台 {self.platform_name} 连接测试失败: {e}")
             return False 

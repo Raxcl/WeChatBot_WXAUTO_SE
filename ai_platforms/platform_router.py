@@ -30,13 +30,13 @@ class PlatformRouter:
         # 初始化所有平台
         self._init_platforms()
         
-        logger.info(f"PlatformRouter initialized with {len(self.platform_instances)} platforms")
-        logger.info(f"User mapping contains {len(user_platform_mapping)} users")
+        logger.info(f"平台路由器初始化完成，共 {len(self.platform_instances)} 个平台")
+        logger.info(f"用户映射包含 {len(user_platform_mapping)} 个用户")
     
     def _init_platforms(self):
         """初始化所有平台实例"""
         # 平台类映射
-        platform_classes = {
+        platform_classes: Dict[str, Any] = {
             'llm_direct': LLMDirectPlatform,
         }
         
@@ -45,22 +45,22 @@ class PlatformRouter:
             from .coze_platform import CozePlatform
             platform_classes['coze'] = CozePlatform
         except Exception as e:
-            logger.warning(f"Coze platform not available: {e}")
+            logger.warning(f"Coze 平台不可用: {e}")
         
         # Dify平台暂未实现
         # try:
         #     from .dify_platform import DifyPlatform
         #     platform_classes['dify'] = DifyPlatform
         # except Exception as e:
-        #     logger.warning(f"Dify platform not available: {e}")
+        #     logger.warning(f"Dify 平台不可用: {e}")
         
         # 初始化各平台实例
         for platform_name, platform_class in platform_classes.items():
             try:
                 self.platform_instances[platform_name] = platform_class()
-                logger.info(f"Successfully initialized {platform_name} platform")
+                logger.info(f"成功初始化 {platform_name} 平台")
             except Exception as e:
-                logger.error(f"Failed to initialize {platform_name} platform: {e}")
+                logger.error(f"初始化 {platform_name} 平台失败: {e}")
                 # 直接跳过失败的平台，不使用降级
     
     def get_user_platform(self, user_id: str) -> Optional[BasePlatform]:
@@ -81,13 +81,13 @@ class PlatformRouter:
         platform = self.platform_instances.get(platform_name)
         
         if not platform:
-            logger.error(f"Platform {platform_name} not available for user {user_id}")
+            logger.error(f"用户 {user_id} 配置的平台 {platform_name} 不可用")
             return None
         
-        logger.debug(f"Selected platform {platform.get_platform_name()} for user {user_id}")
+        logger.debug(f"为用户 {user_id} 选择平台 {platform.get_platform_name()}")
         return platform
     
-    def route_message(self, user_id: str, message: str, store_context: bool = True, is_summary: bool = False, system_prompt: str = None) -> str:
+    def route_message(self, user_id: str, message: str, store_context: bool = True, is_summary: bool = False, system_prompt: Optional[str] = None) -> str:
         """
         路由消息到对应平台
         
@@ -106,7 +106,7 @@ class PlatformRouter:
             return "抱歉，AI服务暂时不可用。"
         
         try:
-            logger.debug(f"Routing message from {user_id} to {platform.get_platform_name()}")
+            logger.debug(f"将用户 {user_id} 的消息路由到 {platform.get_platform_name()}")
             response = platform.get_response(
                 message, 
                 user_id, 
@@ -116,7 +116,7 @@ class PlatformRouter:
             )
             return response if response else "抱歉，未能获取到有效回复。"
         except Exception as e:
-            logger.error(f"Error routing message for user {user_id}: {e}")
+            logger.error(f"为用户 {user_id} 路由消息时发生错误: {e}")
             error_response = platform.handle_error(e, user_id)
             return error_response if error_response else "抱歉，处理您的请求时发生错误。"
     
@@ -179,10 +179,10 @@ class PlatformRouter:
             if platform:
                 try:
                     results[name] = platform.test_connection()
-                    logger.info(f"Platform {name} connection test: {'PASS' if results[name] else 'FAIL'}")
+                    logger.info(f"平台 {name} 连接测试: {'通过' if results[name] else '失败'}")
                 except Exception as e:
                     results[name] = False
-                    logger.error(f"Platform {name} connection test failed: {e}")
+                    logger.error(f"平台 {name} 连接测试失败: {e}")
             else:
                 results[name] = False
         
@@ -196,7 +196,7 @@ class PlatformRouter:
             user_platform_mapping (dict): 新的用户平台映射配置
         """
         self.user_platform_mapping = user_platform_mapping
-        logger.info(f"Updated user platform mapping for {len(user_platform_mapping)} users")
+        logger.info(f"已更新 {len(user_platform_mapping)} 个用户的平台映射")
     
     def add_platform(self, name: str, platform_class, config=None):
         """
@@ -209,9 +209,9 @@ class PlatformRouter:
         """
         try:
             self.platform_instances[name] = platform_class(config)
-            logger.info(f"Successfully added platform: {name}")
+            logger.info(f"成功添加平台: {name}")
         except Exception as e:
-            logger.error(f"Failed to add platform {name}: {e}")
+            logger.error(f"添加平台 {name} 失败: {e}")
             raise
 
 
@@ -251,11 +251,11 @@ def _load_user_platform_mapping():
                     'platform': 'llm_direct'  # 默认平台
                 }
         
-        logger.info(f"Loaded platform mapping for {len(user_mapping)} users")
+        logger.info(f"已加载 {len(user_mapping)} 个用户的平台映射")
         return user_mapping
         
     except Exception as e:
-        logger.error(f"Failed to load user platform mapping: {e}")
+        logger.error(f"加载用户平台映射失败: {e}")
         return {}
 
 
@@ -271,12 +271,12 @@ def _get_global_router() -> PlatformRouter:
     if _global_router is None:
         user_mapping = _load_user_platform_mapping()
         _global_router = PlatformRouter(user_mapping)
-        logger.info("Global platform router initialized")
+        logger.info("全局平台路由器初始化完成")
     
     return _global_router
 
 
-def get_platform_response(message: str, user_id: str, store_context: bool = True, is_summary: bool = False, system_prompt: str = None) -> str:
+def get_platform_response(message: str, user_id: str, store_context: bool = True, is_summary: bool = False, system_prompt: Optional[str] = None) -> str:
     """
     统一的平台响应函数（供主程序调用）
     
@@ -300,7 +300,7 @@ def get_platform_response(message: str, user_id: str, store_context: bool = True
             system_prompt=system_prompt
         )
     except Exception as e:
-        logger.error(f"Platform routing failed for user {user_id}: {e}")
+        logger.error(f"用户 {user_id} 的平台路由失败: {e}")
         return "抱歉，AI服务暂时不可用，请检查平台配置。"
 
 
@@ -315,11 +315,11 @@ def get_platform_stats() -> Dict[str, Any]:
         router = _get_global_router()
         return router.get_platform_stats()
     except Exception as e:
-        logger.error(f"Failed to get platform stats: {e}")
+        logger.error(f"获取平台统计信息失败: {e}")
         return {'error': str(e)}
 
 
-def test_all_platforms() -> Dict[str, bool]:
+def test_all_platforms() -> Dict[str, Any]:
     """
     测试所有平台连接
     
@@ -330,7 +330,7 @@ def test_all_platforms() -> Dict[str, bool]:
         router = _get_global_router()
         return router.test_all_platforms()
     except Exception as e:
-        logger.error(f"Failed to test platforms: {e}")
+        logger.error(f"测试平台连接失败: {e}")
         return {'error': str(e)}
 
 
@@ -343,11 +343,11 @@ def reload_user_mapping():
         user_mapping = _load_user_platform_mapping()
         if _global_router:
             _global_router.update_user_mapping(user_mapping)
-            logger.info("User platform mapping reloaded")
+            logger.info("用户平台映射重新加载完成")
         else:
             # 如果路由器未初始化，创建新的
             _global_router = PlatformRouter(user_mapping)
-            logger.info("Global platform router created with new mapping")
+            logger.info("创建全局平台路由器，使用新的映射配置")
     except Exception as e:
-        logger.error(f"Failed to reload user mapping: {e}")
+        logger.error(f"重新加载用户映射失败: {e}")
         raise 
