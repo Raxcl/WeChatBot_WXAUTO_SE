@@ -1414,8 +1414,9 @@ def process_user_messages(user_id):
         # --- 常规回复逻辑 (如果未启用联网、检测不需要联网、或联网失败) ---
         if reply is None: # 只有在尚未通过联网逻辑生成回复时才执行
             logger.info(f"为用户 {user_id} 执行常规回复（无联网信息）。")
-            from ai_platforms.llm_direct import get_deepseek_response
-            reply = get_deepseek_response(merged_message, user_id, store_context=True)
+            # 使用多平台架构路由
+            from ai_platforms.platform_router import get_platform_response
+            reply = get_platform_response(merged_message, user_id, store_context=True)
 
         # --- 发送最终回复 ---
         if reply:

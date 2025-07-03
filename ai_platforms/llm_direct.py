@@ -68,7 +68,7 @@ class LLMDirectPlatform(BasePlatform):
         if not self.config['api_key'] or self.config['api_key'] == "your-api-key":
             raise ValueError("Invalid API key in config")
     
-    def get_response(self, message, user_id, store_context=True, is_summary=False):
+    def get_response(self, message, user_id, store_context=True, is_summary=False, system_prompt=None):
         """
         获取大模型响应
         
@@ -79,17 +79,24 @@ class LLMDirectPlatform(BasePlatform):
             user_id (str): 用户ID
             store_context (bool): 是否存储上下文
             is_summary (bool): 是否为总结任务
+            system_prompt (str): 系统提示词，默认None
         
         Returns:
             str: AI回复内容
         """
         # 调用经过验证的 get_deepseek_response 函数
-        return get_deepseek_response(message, user_id, store_context=store_context, is_summary=is_summary)
+        return get_deepseek_response(
+            message, 
+            user_id, 
+            store_context=store_context, 
+            is_summary=is_summary,
+            system_prompt=system_prompt
+        )
 
 
 
     
-def get_deepseek_response(message, user_id, store_context=True, is_summary=False):
+def get_deepseek_response(message, user_id, store_context=True, is_summary=False, system_prompt=None):
     """
     从 DeepSeek API 获取响应，确保正确的上下文处理，并持久化上下文。
 
@@ -98,6 +105,7 @@ def get_deepseek_response(message, user_id, store_context=True, is_summary=False
         user_id (str): 用户或系统组件的标识符。
         store_context (bool): 是否将此交互存储到聊天上下文中。
                               对于工具调用（如解析或总结），设置为 False。
+        system_prompt (str): 自定义系统提示词，如果提供将覆盖默认的用户角色提示词。
     """
     try:
         # 延迟导入避免循环依赖
@@ -120,11 +128,17 @@ def get_deepseek_response(message, user_id, store_context=True, is_summary=False
             # --- 处理需要上下文的常规聊天消息 ---
             # 1. 获取该用户的系统提示词
             try:
-                user_prompt = get_user_prompt(user_id)
-                messages_to_send.append({"role": "system", "content": user_prompt})
+                # 如果提供了自定义系统提示词，优先使用
+                if system_prompt:
+                    messages_to_send.append({"role": "system", "content": system_prompt})
+                    logger.info(f"使用自定义系统提示词 - 用户: {user_id}")
+                else:
+                    user_prompt = get_user_prompt(user_id)
+                    messages_to_send.append({"role": "system", "content": user_prompt})
             except FileNotFoundError as e:
                 logger.error(f"用户 {user_id} 的提示文件错误: {e}，使用默认提示。")
-                messages_to_send.append({"role": "system", "content": "你是一个乐于助人的助手。"})
+                fallback_prompt = system_prompt if system_prompt else "你是一个乐于助人的助手。"
+                messages_to_send.append({"role": "system", "content": fallback_prompt})
 
             # 2. 管理并检索聊天历史记录
             with queue_lock: # 确保对 chat_contexts 的访问是线程安全的
@@ -156,6 +170,11 @@ def get_deepseek_response(message, user_id, store_context=True, is_summary=False
 
         else:
             # --- 处理工具调用（如提醒解析、总结） ---
+            # 如果提供了系统提示词，添加到消息中
+            if system_prompt:
+                messages_to_send.append({"role": "system", "content": system_prompt})
+                logger.info(f"工具调用使用自定义系统提示词 - ID: {user_id}")
+            
             messages_to_send.append({"role": "user", "content": message})
             logger.info(f"工具调用 (store_context=False)，ID: {user_id}。仅发送提供的消息。")
 

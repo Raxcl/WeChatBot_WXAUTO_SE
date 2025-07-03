@@ -182,7 +182,6 @@ DB_POOL_RECYCLE = 3600  # 连接回收时间（秒）
 
 # === Coze平台配置 ===
 COZE_CONFIG = {
-    # JWT OAuth 配置
     'client_type': 'jwt',
     'client_id': '1172432460246',
     'private_key': """-----BEGIN PRIVATE KEY-----
@@ -214,6 +213,9 @@ H+Vlebrpe1IZWXLiD6mzBciYWHlPUMLSRNY7ueJb/ClZyC/W0DtmrjSczl/HY+sp
 5pl8t6mPuBoW/yXQeTuNrg==
 -----END PRIVATE KEY-----""",
     'public_key_id': 'Wh_cgx5H1xz0MNA8O5t7-POb3dQmVfdloDc_X8BL0ek',
+    'workspace_id': None,  # 可选，工作空间ID
+    
+    # === 通用配置 ===
     'www_base_url': 'https://www.coze.cn',
     'api_base_url': 'https://api.coze.cn',
     
@@ -223,7 +225,7 @@ H+Vlebrpe1IZWXLiD6mzBciYWHlPUMLSRNY7ueJb/ClZyC/W0DtmrjSczl/HY+sp
     'temperature': 0.8,
     'max_tokens': 2000,
     
-    # Token 配置
+    # Token 配置（仅用于JWT OAuth方式）
     'token_ttl': 86400,  # JWT token 有效期（秒，最长24小时=86400秒）
     'auto_refresh_token': True,  # 是否自动刷新 token
     'token_refresh_threshold': 3600,  # token 剩余时间少于此值时自动刷新（秒）

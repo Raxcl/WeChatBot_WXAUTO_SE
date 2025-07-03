@@ -32,7 +32,7 @@ class BasePlatform(ABC):
             raise
     
     @abstractmethod
-    def get_response(self, message, user_id, store_context=True, is_summary=False):
+    def get_response(self, message, user_id, store_context=True, is_summary=False, system_prompt=None):
         """
         获取AI响应
         
@@ -41,6 +41,7 @@ class BasePlatform(ABC):
             user_id (str): 用户ID  
             store_context (bool): 是否存储上下文，默认True
             is_summary (bool): 是否为总结任务，默认False
+            system_prompt (str): 系统提示词，默认None
         
         Returns:
             str: AI回复内容
@@ -126,7 +127,8 @@ class BasePlatform(ABC):
                 message="测试连接", 
                 user_id="test_user", 
                 store_context=False,
-                is_summary=False
+                is_summary=False,
+                system_prompt=None
             )
             return bool(test_response and len(test_response.strip()) > 0)
         except Exception as e:
