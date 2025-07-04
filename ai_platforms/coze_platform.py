@@ -180,17 +180,17 @@ class CozePlatform(BasePlatform):
         try:
             # 为保持与LLM Direct完全一致的行为，我们只传递当前消息给Coze
             # 让基类的上下文管理完全接管历史管理，而不依赖Coze平台的自动上下文
-            # todo 暂停 system_prompt为空，怀疑 messages 为空，需要判断大模型直连那边的提示词如何获取的
             current_message = ""
             system_prompt = None
             
+            logger.debug(f"coze消息，messages: {messages}")
             # 只提取当前消息和系统提示词
             for msg in messages:
                 if msg["role"] == "system":
                     system_prompt = msg["content"]
                 elif msg["role"] == "user":
                     current_message = msg["content"]  # 使用最后一条用户消息
-            
+            logger.debug(f"coze system_prompt: {system_prompt}")
             logger.info(f"调用 Coze API - 用户: {user_id}, 当前消息: {current_message[:100]}...")
             logger.info(f"注意: 使用基类上下文管理，确保与LLM Direct行为完全一致")
             
@@ -225,7 +225,37 @@ class CozePlatform(BasePlatform):
                     if workflow_data:
                         # 如果结果在data属性中
                         if isinstance(workflow_data, str):
-                            reply_content = workflow_data
+                            # 尝试解析JSON格式的data字段
+                            try:
+                                import json
+                                parsed_data = json.loads(workflow_data)
+                                logger.debug(f"成功解析工作流JSON数据: {parsed_data}")
+                                
+                                # 根据解析结果的结构提取消息内容
+                                if isinstance(parsed_data, dict):
+                                    # 优先获取data字段中的内容
+                                    if 'data' in parsed_data:
+                                        reply_content = parsed_data['data']
+                                    elif 'content' in parsed_data:
+                                        reply_content = parsed_data['content']
+                                    elif 'message' in parsed_data:
+                                        reply_content = parsed_data['message']
+                                    else:
+                                        # 如果没有标准字段，尝试获取所有字符串值
+                                        for key, value in parsed_data.items():
+                                            if isinstance(value, str) and len(value) > 10:  # 假设有意义的回复至少10个字符
+                                                reply_content = value
+                                                break
+                                elif isinstance(parsed_data, str):
+                                    reply_content = parsed_data
+                                
+                                if not reply_content:
+                                    logger.warning(f"无法从解析的JSON中提取有效内容: {parsed_data}")
+                                    reply_content = workflow_data  # 降级为原始字符串
+                                    
+                            except json.JSONDecodeError:
+                                logger.debug(f"data字段不是有效JSON，直接使用原始字符串: {workflow_data}")
+                                reply_content = workflow_data
                         else:
                             data_output = getattr(workflow_data, 'output', None)
                             data_result = getattr(workflow_data, 'result', None)
