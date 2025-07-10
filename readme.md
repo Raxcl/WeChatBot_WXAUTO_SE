@@ -1,3 +1,13 @@
+#部署
+pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+
+python .\compile_and_deploy.p
+
+# 推荐：使用 PyInstaller 打包但禁用混淆（避免许可证限制）
+python compile_and_deploy.py --method pyinstaller --no-obfuscation
+
+
+
 # 说明
 - 这是一个智能微信聊天机器人。通过wxautox_wechatbot收发微信消息，调用deepseek、gpt、gemini等大语言模型生成回复消息。
 - 原项目仓库：https://github.com/KouriChat/KouriChat
