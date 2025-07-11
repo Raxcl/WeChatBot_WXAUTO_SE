@@ -13,10 +13,11 @@ import argparse
 from pathlib import Path
 
 class SourceProtector:
-    def __init__(self, project_dir="."):
+    def __init__(self, project_dir=".."):
         self.project_dir = Path(project_dir).resolve()
         self.dist_dir = self.project_dir / "dist"
         self.build_dir = self.project_dir / "build"
+        self.release_dir = self.dist_dir / "release"  # 统一的发布目录
         
         # 核心源码文件列表
         self.core_files = [
