@@ -86,16 +86,16 @@ class SourceProtector:
             print("🔒 启用代码混淆...")
             try:
                 self._obfuscate_code()
-                main_file = self.dist_dir / "obfuscated" / "bot.py"
+                main_file = self.dist_dir / "obfuscated" / "config_editor.py"
                 if not main_file.exists():
                     print("⚠️  混淆后的主文件未找到，使用原始文件")
-                    main_file = "bot.py"
+                    main_file = "config_editor.py"
             except Exception as e:
                 print(f"⚠️  代码混淆失败: {e}")
                 print("🔄 继续使用原始文件进行打包...")
-                main_file = "bot.py"
+                main_file = "config_editor.py"
         else:
-            main_file = "bot.py"
+            main_file = "config_editor.py"
 
         # 创建PyInstaller输出目录
         pyinstaller_dir = self.dist_dir / "pyinstaller"
@@ -164,6 +164,15 @@ class SourceProtector:
             "--hidden-import=ai_platforms.base_platform",
             "--hidden-import=ai_platforms.coze_platform",
             "--hidden-import=ai_platforms.llm_direct",
+            # Flask web应用相关
+            "--hidden-import=flask",
+            "--hidden-import=werkzeug",
+            "--hidden-import=jinja2",
+            "--hidden-import=markupsafe",
+            "--hidden-import=itsdangerous",
+            "--hidden-import=click",
+            "--hidden-import=filelock",
+            "--hidden-import=webbrowser",
             # 收集wxautox_wechatbot包的所有数据文件
             "--collect-data=wxautox_wechatbot",
             # 收集项目的数据文件
@@ -179,6 +188,11 @@ class SourceProtector:
             dir_path = self.project_dir / data_dir
             if dir_path.exists():
                 cmd.append(f"--add-data={data_dir};{data_dir}")
+        
+        # 确保Flask应用必需的文件被包含
+        cmd.append("--add-data=config.py;.")
+        cmd.append("--add-data=bot.py;.")
+        cmd.append("--add-data=updater.py;.")
         
         try:
             print("🔨 执行 PyInstaller 打包...")

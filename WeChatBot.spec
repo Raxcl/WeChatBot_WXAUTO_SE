@@ -1,18 +1,18 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_data_files
 
-datas = [('templates', 'templates'), ('prompts', 'prompts'), ('emojis', 'emojis')]
+datas = [('templates', 'templates'), ('prompts', 'prompts'), ('emojis', 'emojis'), ('config.py', '.'), ('bot.py', '.'), ('updater.py', '.')]
 datas += collect_data_files('wxautox_wechatbot')
 datas += collect_data_files('database')
 datas += collect_data_files('ai_platforms')
 
 
 a = Analysis(
-    ['bot.py'],
+    ['config_editor.py'],
     pathex=[],
     binaries=[],
     datas=datas,
-    hiddenimports=['wxautox_wechatbot', 'wxautox_wechatbot.logger', 'wxautox_wechatbot.param', 'wxautox_wechatbot.languages', 'wxautox_wechatbot.uiautomation', 'comtypes', 'pywin32', 'win32api', 'win32con', 'win32gui', 'win32process', 'pywintypes', 'tenacity', 'tenacity.retry', 'tenacity.stop', 'tenacity.wait', 'openai', 'httpx', 'httpcore', 'h11', 'anyio', 'sniffio', 'sqlalchemy', 'sqlalchemy.dialects.sqlite', 'sqlalchemy.pool', 'database', 'database.models', 'database.database', 'requests', 'beautifulsoup4', 'bs4', 'pyautogui', 'PIL', 'PIL.Image', 'PIL.ImageTk', 'json', 'queue', 'threading', 'logging', 'datetime', 'base64', 'urllib.parse', 'ai_platforms', 'ai_platforms.manager', 'ai_platforms.platform_router', 'ai_platforms.base_platform', 'ai_platforms.coze_platform', 'ai_platforms.llm_direct'],
+    hiddenimports=['wxautox_wechatbot', 'wxautox_wechatbot.logger', 'wxautox_wechatbot.param', 'wxautox_wechatbot.languages', 'wxautox_wechatbot.uiautomation', 'comtypes', 'pywin32', 'win32api', 'win32con', 'win32gui', 'win32process', 'pywintypes', 'tenacity', 'tenacity.retry', 'tenacity.stop', 'tenacity.wait', 'openai', 'httpx', 'httpcore', 'h11', 'anyio', 'sniffio', 'sqlalchemy', 'sqlalchemy.dialects.sqlite', 'sqlalchemy.pool', 'database', 'database.models', 'database.database', 'requests', 'beautifulsoup4', 'bs4', 'pyautogui', 'PIL', 'PIL.Image', 'PIL.ImageTk', 'json', 'queue', 'threading', 'logging', 'datetime', 'base64', 'urllib.parse', 'ai_platforms', 'ai_platforms.manager', 'ai_platforms.platform_router', 'ai_platforms.base_platform', 'ai_platforms.coze_platform', 'ai_platforms.llm_direct', 'flask', 'werkzeug', 'jinja2', 'markupsafe', 'itsdangerous', 'click', 'filelock', 'webbrowser'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
